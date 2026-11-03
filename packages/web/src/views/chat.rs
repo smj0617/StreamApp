@@ -175,7 +175,7 @@ fn ChatConnection(
             }
             if !can_send {
                 p { class: "chat-guide muted small",
-                    "상단 오른쪽에서 사용자를 고르거나 새로 만들면 채팅을 보낼 수 있습니다. 지금은 시청만 가능합니다."
+                    "상단 오른쪽 사용자 메뉴에서 사용자를 고르거나 새로 만들면 채팅을 보낼 수 있습니다. 지금은 시청만 가능합니다."
                 }
             } else if usable {
                 p { class: "{count_class}", "{length}/{MAX_CHAT_CHARS}" }

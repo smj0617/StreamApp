@@ -37,7 +37,9 @@ pub fn Shell() -> Element {
     }
 }
 
-/// 상단 오른쪽 "현재 사용자" 드롭다운과 새 사용자 만들기.
+/// 상단 오른쪽 사용자 메뉴. 현재 사용자(고르지 않았으면 "시청만 가능")를 보여 주는 버튼을 누르면
+/// 펼쳐지는 메뉴 하나에, 기존 사용자 목록(고르기)과 새 닉네임 입력(만들기)이 함께 있다.
+/// 고르거나 만들면 그 사용자가 현재 사용자가 되고(서버가 쿠키로 기억한다) 메뉴가 닫힌다.
 #[component]
 fn UserMenu() -> Element {
     let CurrentUser(mut current) = use_context::<CurrentUser>();
@@ -51,19 +53,29 @@ fn UserMenu() -> Element {
             .and_then(|result| result.as_ref().ok())
             .cloned()
     });
+    let mut open = use_signal(|| false);
     let mut new_nickname = use_signal(String::new);
     let mut error = use_signal(|| None::<String>);
 
-    let selected_id = current.read().as_ref().map(|user| user.id);
+    let current_user = current.read().clone();
+    let selected_id = current_user.as_ref().map(|user| user.id);
+    let current_label = current_user
+        .as_ref()
+        .map_or("시청만 가능", |user| user.nickname.as_str())
+        .to_string();
+    // 목록의 (ID, 닉네임). `None` = 불러오지 못함.
+    let options: Option<Vec<(i64, String)>> = users.read().as_ref().map(|list| {
+        list.iter()
+            .map(|user| (user.id, user.nickname.clone()))
+            .collect()
+    });
 
-    let select = move |event: FormEvent| async move {
-        let Ok(user_id) = event.value().parse::<i64>() else {
-            return;
-        };
+    let select = move |user_id: i64| async move {
         match api::select_user(user_id).await {
             Ok(user) => {
                 current.set(Some(user));
                 error.set(None);
+                open.set(false);
             }
             Err(e) => error.set(Some(rejection_reason(e))),
         }
@@ -78,6 +90,7 @@ fn UserMenu() -> Element {
                 current.set(Some(created.user));
                 new_nickname.set(String::new());
                 error.set(None);
+                open.set(false);
             }
             Err(e) => error.set(Some(rejection_reason(e))),
         }
@@ -85,44 +98,74 @@ fn UserMenu() -> Element {
 
     rsx! {
         div { class: "user-menu",
-            select {
-                class: "user-select",
-                aria_label: "현재 사용자",
-                onchange: select,
-                if selected_id.is_none() {
-                    option { value: "", selected: true, "시청만 가능" }
+            button {
+                class: "user-menu-button",
+                aria_label: "현재 사용자: {current_label}",
+                aria_haspopup: "true",
+                aria_expanded: "{open}",
+                onclick: move |_| {
+                    // 펼칠 때마다 지난 거절 사유를 지운다.
+                    error.set(None);
+                    open.toggle();
+                },
+                span {
+                    class: if selected_id.is_some() { "user-menu-current" } else { "user-menu-current viewer-only" },
+                    "{current_label}"
                 }
-                match &*users.read() {
-                    Some(list) => rsx! {
-                        for user in list.iter() {
-                            option {
-                                key: "{user.id}",
-                                value: "{user.id}",
-                                selected: Some(user.id) == selected_id,
-                                "{user.nickname}"
-                            }
+                span { class: "user-menu-caret", aria_hidden: "true", "▾" }
+            }
+            if open() {
+                // 메뉴 바깥을 누르면 닫는다.
+                div { class: "user-menu-backdrop", onclick: move |_| open.set(false) }
+                div {
+                    class: "user-menu-panel",
+                    role: "dialog",
+                    aria_label: "사용자 고르기",
+                    onkeydown: move |event| {
+                        if event.key() == Key::Escape {
+                            open.set(false);
                         }
                     },
-                    None => rsx! {
-                        option { disabled: true, "사용자 목록을 불러오지 못했습니다" }
-                    },
-                }
-            }
-            input {
-                class: "new-nickname",
-                aria_label: "새 닉네임",
-                placeholder: "새 닉네임",
-                value: "{new_nickname}",
-                oninput: move |event| new_nickname.set(event.value()),
-                onkeydown: move |event| async move {
-                    if event.key() == Key::Enter {
-                        create().await;
+                    p { class: "user-menu-heading", "사용자 고르기" }
+                    match options {
+                        Some(list) => rsx! {
+                            ul { class: "user-list",
+                                for (id, nickname) in list {
+                                    li { key: "{id}",
+                                        button {
+                                            class: if Some(id) == selected_id { "user-option selected" } else { "user-option" },
+                                            aria_pressed: "{Some(id) == selected_id}",
+                                            onclick: move |_| async move { select(id).await },
+                                            "{nickname}"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        None => rsx! {
+                            p { class: "user-menu-note muted", "사용자 목록을 불러오지 못했습니다" }
+                        },
                     }
-                },
-            }
-            button { onclick: move |_| async move { create().await }, "만들기" }
-            if let Some(reason) = error() {
-                p { class: "user-menu-error", role: "alert", "{reason}" }
+                    p { class: "user-menu-heading", "새 사용자 만들기" }
+                    div { class: "user-menu-create",
+                        input {
+                            class: "new-nickname",
+                            aria_label: "새 닉네임",
+                            placeholder: "새 닉네임",
+                            value: "{new_nickname}",
+                            oninput: move |event| new_nickname.set(event.value()),
+                            onkeydown: move |event| async move {
+                                if event.key() == Key::Enter {
+                                    create().await;
+                                }
+                            },
+                        }
+                        button { onclick: move |_| async move { create().await }, "만들기" }
+                    }
+                    if let Some(reason) = error() {
+                        p { class: "user-menu-error", role: "alert", "{reason}" }
+                    }
+                }
             }
         }
     }

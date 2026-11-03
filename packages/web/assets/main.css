@@ -53,7 +53,6 @@ body {
   gap: 8px;
 }
 
-.user-menu select,
 .user-menu input,
 .user-menu button {
   padding: 6px 8px;
@@ -64,30 +63,105 @@ body {
   font: inherit;
 }
 
-.user-menu select {
-  min-width: 140px;
-}
-
-.user-menu input {
-  width: 120px;
-}
-
 .user-menu button {
   cursor: pointer;
 }
 
-/* 거절 사유: 상단 바 높이를 바꾸지 않도록 메뉴 아래에 띄운다. */
-.user-menu-error {
+/* 메뉴를 여는 버튼: 현재 사용자(고르지 않았으면 "시청만 가능")와 펼침 표시. */
+.user-menu .user-menu-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 140px;
+}
+
+.user-menu-current.viewer-only {
+  color: var(--muted);
+}
+
+.user-menu-caret {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* 메뉴 바깥을 누르면 닫히도록 화면 전체를 덮는 투명한 층. */
+.user-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+}
+
+/* 펼친 메뉴: 상단 바 높이를 바꾸지 않도록 버튼 아래에 띄운다. */
+.user-menu-panel {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 6px);
   right: 0;
-  margin: 6px 0 0;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 260px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bar-bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.user-menu-heading {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.user-menu-note {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.user-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.user-menu .user-option {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+.user-menu .user-option:hover {
+  background: var(--bg);
+}
+
+.user-menu .user-option.selected {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.user-menu-create {
+  display: flex;
+  gap: 6px;
+}
+
+.user-menu-create input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 거절 사유: 메뉴 안, 새 닉네임 입력 아래. */
+.user-menu-error {
+  margin: 0;
   padding: 6px 10px;
   border-radius: 6px;
   background: #d93025;
   color: #fff;
   font-size: 0.85rem;
-  white-space: nowrap;
 }
 
 .page {
