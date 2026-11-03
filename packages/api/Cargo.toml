@@ -16,6 +16,8 @@ tracing = { version = "0.1", optional = true }
 # MediaMTX 연동 엔드포인트(`mediamtx` 모듈). dioxus가 쓰는 axum 0.8과 같은 크레이트로 합쳐진다.
 axum = { version = "0.8", optional = true }
 form_urlencoded = { version = "1", optional = true }
+# 앱 시작 시 MediaMTX Control API 조회(`server::mediamtx_api`). dioxus-fullstack이 쓰는 reqwest 0.12와 합쳐진다.
+reqwest = { version = "0.12", default-features = false, features = ["json"], optional = true }
 
 [features]
 # 이름을 바꾸면 안 된다: 서버 함수 매크로가 `feature = "server"`를 전제로 코드를 만든다.
@@ -28,6 +30,7 @@ server = [
     "dep:tracing",
     "dep:axum",
     "dep:form_urlencoded",
+    "dep:reqwest",
 ]
 
 [dev-dependencies]

@@ -7,6 +7,7 @@ use super::shell::{rejection_reason, CurrentUser};
 const MAX_TITLE_CHARS: usize = 100;
 
 /// 내 채널 설정: OBS에 넣을 값을 복사하고 다음 라이브 제목을 적어 둔다.
+/// 라이브 중이면 진행 중인 라이브의 제목도 바꿀 수 있다.
 #[component]
 pub fn Settings() -> Element {
     let CurrentUser(current) = use_context::<CurrentUser>();
@@ -51,8 +52,20 @@ fn ChannelSettingsForm(nickname: String) -> Element {
 
     match state {
         Some(Ok(Some(settings))) => rsx! {
+            // 진행 중인 라이브 제목 편집은 라이브 중일 때만 나타난다(페이지를 불러온 시점 기준).
+            if let Some(live_title) = settings.live_title.clone() {
+                TitleEditor {
+                    kind: TitleKind::Live,
+                    saved: live_title,
+                    nickname: nickname.clone(),
+                }
+            }
             ObsValues { settings: settings.clone() }
-            NextLiveTitleEditor { saved: settings.next_live_title, nickname }
+            TitleEditor {
+                kind: TitleKind::NextLive,
+                saved: settings.next_live_title.unwrap_or_default(),
+                nickname,
+            }
         },
         // 쿠키의 사용자가 DB에 없다(예: DB 파일을 지운 뒤).
         Some(Ok(None)) => rsx! {
@@ -145,17 +158,57 @@ async fn copy_to_clipboard(text: &str) -> bool {
     eval.join::<bool>().await.unwrap_or(false)
 }
 
-/// 다음 라이브 제목 편집. 저장하면 서버가 다듬은 값(앞뒤 공백 제거)으로 바꿔 보여 준다.
+/// 내 채널 설정에서 편집하는 제목. 두 제목은 규칙(최대 100자)과 편집 화면이 같다.
+#[derive(Clone, Copy, PartialEq)]
+enum TitleKind {
+    /// 다음 라이브 제목: 송출을 시작하면 라이브 제목이 된다.
+    NextLive,
+    /// 진행 중인 라이브의 제목: 라이브 중일 때만 편집할 수 있다.
+    Live,
+}
+
+impl TitleKind {
+    fn heading(self) -> &'static str {
+        match self {
+            TitleKind::NextLive => "다음 라이브 제목",
+            TitleKind::Live => "진행 중인 라이브 제목",
+        }
+    }
+
+    fn description(self, nickname: &str) -> String {
+        match self {
+            TitleKind::NextLive => format!(
+                "송출을 시작하면 이 제목이 라이브 제목이 됩니다. 비워 두면 \"{nickname}님의 라이브\"가 붙습니다."
+            ),
+            TitleKind::Live => format!(
+                "지금 라이브 중입니다. 바꾼 제목은 홈과 시청 페이지에 반영됩니다(이미 열려 있는 페이지는 새로고침하면 보입니다). 비우면 \"{nickname}님의 라이브\"가 됩니다."
+            ),
+        }
+    }
+
+    /// 서버에 저장하고, 서버가 다듬은 제목을 돌려준다(다음 라이브 제목을 지웠으면 빈 문자열).
+    async fn save(self, title: String) -> Result<String, ServerFnError> {
+        match self {
+            TitleKind::NextLive => api::change_next_live_title(title)
+                .await
+                .map(Option::unwrap_or_default),
+            TitleKind::Live => api::change_live_title(title).await,
+        }
+    }
+}
+
+/// 제목 편집. 저장하면 서버가 다듬은 값(앞뒤 공백 제거, 라이브 제목을 비웠으면 기본 제목)으로
+/// 바꿔 보여 준다.
 #[component]
-fn NextLiveTitleEditor(saved: Option<String>, nickname: String) -> Element {
-    let mut title = use_signal(|| saved.clone().unwrap_or_default());
+fn TitleEditor(kind: TitleKind, saved: String, nickname: String) -> Element {
+    let mut title = use_signal(|| saved.clone());
     // Ok = 저장 완료 안내, Err = 거절 사유
     let mut outcome = use_signal(|| None::<Result<&'static str, String>>);
 
     let save = move || async move {
-        match api::change_next_live_title(title()).await {
+        match kind.save(title()).await {
             Ok(saved) => {
-                title.set(saved.unwrap_or_default());
+                title.set(saved);
                 outcome.set(Some(Ok("저장했습니다")));
             }
             Err(error) => outcome.set(Some(Err(rejection_reason(error)))),
@@ -169,16 +222,27 @@ fn NextLiveTitleEditor(saved: Option<String>, nickname: String) -> Element {
         "title-count"
     };
 
+    let heading = kind.heading();
+    let description = kind.description(&nickname);
+    let card_class = match kind {
+        TitleKind::NextLive => "settings-card",
+        TitleKind::Live => "settings-card live-title-card",
+    };
+
     rsx! {
-        section { class: "settings-card",
-            h2 { "다음 라이브 제목" }
-            p { class: "muted",
-                "송출을 시작하면 이 제목이 라이브 제목이 됩니다. 비워 두면 \"{nickname}님의 라이브\"가 붙습니다."
+        section { class: "{card_class}",
+            h2 {
+                if kind == TitleKind::Live {
+                    span { class: "live-badge", "LIVE" }
+                    " "
+                }
+                "{heading}"
             }
+            p { class: "muted", "{description}" }
             div { class: "field-row",
                 input {
                     class: "title-input",
-                    aria_label: "다음 라이브 제목",
+                    aria_label: "{heading}",
                     placeholder: "{nickname}님의 라이브",
                     value: "{title}",
                     oninput: move |event| {
@@ -191,7 +255,11 @@ fn NextLiveTitleEditor(saved: Option<String>, nickname: String) -> Element {
                         }
                     },
                 }
-                button { onclick: move |_| async move { save().await }, "저장" }
+                button {
+                    onclick: move |_| async move { save().await },
+                    aria_label: "{heading} 저장",
+                    "저장"
+                }
             }
             p { class: "{count_class}", "{length}/{MAX_TITLE_CHARS}" }
             match outcome() {

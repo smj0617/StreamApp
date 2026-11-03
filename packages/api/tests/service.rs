@@ -603,3 +603,302 @@ async fn publish_started_on_unknown_channel_is_rejected() {
     );
     assert_eq!(svc.live_channels().await.unwrap(), []);
 }
+
+// ---- 송출 상태 맞추기: 앱이 시작할 때 라이브를 실제 송출(지금 송출 중인 채널 ID 목록)에 맞춘다 ----
+
+#[tokio::test]
+async fn reconciling_with_no_publishing_channels_closes_every_open_live() {
+    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+    svc.publish_started(&younghee).await.unwrap();
+    clock.set(9_000);
+
+    svc.reconcile_publishing(&[]).await.unwrap();
+
+    assert_eq!(svc.live_channels().await.unwrap(), []);
+}
+
+#[tokio::test]
+async fn reconciling_opens_live_for_publishing_channel_without_open_live() {
+    let (svc, clock, [_, younghee, _]) = service_with_clock().await;
+    clock.set(9_000);
+
+    svc.reconcile_publishing(std::slice::from_ref(&younghee))
+        .await
+        .unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&younghee, "영희", "영희님의 라이브", 9_000)]);
+}
+
+#[tokio::test]
+async fn reconciling_keeps_open_live_of_publishing_channel() {
+    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+    clock.set(9_000);
+
+    svc.reconcile_publishing(std::slice::from_ref(&chulsoo))
+        .await
+        .unwrap();
+
+    // 같은 라이브가 이어진다: 시작 시각이 그대로다.
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&chulsoo, "철수", "철수님의 라이브", 1_000)]);
+}
+
+#[tokio::test]
+async fn reconciling_closes_ghost_lives_and_opens_missing_ones_together() {
+    let (svc, clock, [chulsoo, younghee, minsu]) = service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+    clock.set(2_000);
+    svc.publish_started(&younghee).await.unwrap();
+    clock.set(9_000);
+
+    // 철수는 계속 송출 중, 영희는 종료 알림 없이 끊김, 민수는 시작 알림을 놓침.
+    svc.reconcile_publishing(&[minsu.clone(), chulsoo.clone()])
+        .await
+        .unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(
+        lives,
+        [
+            live(&minsu, "민수", "민수님의 라이브", 9_000),
+            live(&chulsoo, "철수", "철수님의 라이브", 1_000),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn reconciling_skips_publishing_path_that_is_not_a_channel() {
+    let (svc, clock, [_, younghee, _]) = service_with_clock().await;
+    clock.set(9_000);
+
+    svc.reconcile_publishing(&["nosuchchanne".to_string(), younghee.clone()])
+        .await
+        .unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&younghee, "영희", "영희님의 라이브", 9_000)]);
+}
+
+// ---- 라이브 제목: 다음 라이브 제목 복사와 라이브 중 변경 ----
+
+/// 기본 사용자 중 그 닉네임을 가진 사용자의 ID.
+async fn user_id(svc: &AppService, nickname: &str) -> i64 {
+    let users = svc.list_users().await.unwrap();
+    let user = users.into_iter().find(|u| u.nickname == nickname);
+    user.expect("기본 사용자").id
+}
+
+#[tokio::test]
+async fn publish_started_opens_live_titled_with_next_live_title() {
+    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    let chulsoo_user = user_id(&svc, "철수").await;
+    svc.change_next_live_title(chulsoo_user, "오늘은 마인크래프트")
+        .await
+        .unwrap();
+    clock.set(1_000);
+
+    svc.publish_started(&chulsoo).await.unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(
+        lives,
+        [live(&chulsoo, "철수", "오늘은 마인크래프트", 1_000)]
+    );
+}
+
+#[tokio::test]
+async fn changed_live_title_shows_in_live_channels() {
+    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+    clock.set(2_000);
+    svc.publish_started(&younghee).await.unwrap();
+
+    let saved = svc
+        .change_live_title(user_id(&svc, "철수").await, "주제를 바꿨어요")
+        .await
+        .unwrap();
+
+    assert_eq!(saved, "주제를 바꿨어요");
+    // 시작 시각은 그대로이고, 다른 채널의 라이브 제목은 바뀌지 않는다.
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(
+        lives,
+        [
+            live(&younghee, "영희", "영희님의 라이브", 2_000),
+            live(&chulsoo, "철수", "주제를 바꿨어요", 1_000),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn live_title_cannot_be_changed_when_not_live() {
+    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    let chulsoo_user = user_id(&svc, "철수").await;
+    // 한 번도 라이브를 하지 않은 채널(영희는 라이브 중이지만 남의 채널이다)
+    clock.set(1_000);
+    svc.publish_started(&younghee).await.unwrap();
+
+    let never_live = svc.change_live_title(chulsoo_user, "새 제목").await;
+
+    assert!(
+        matches!(never_live, Err(ServiceError::NotLive)),
+        "{never_live:?}"
+    );
+
+    // 라이브가 끝난 뒤
+    svc.publish_started(&chulsoo).await.unwrap();
+    svc.publish_ended(&chulsoo).await.unwrap();
+
+    let ended = svc.change_live_title(chulsoo_user, "새 제목").await;
+
+    assert!(matches!(ended, Err(ServiceError::NotLive)), "{ended:?}");
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&younghee, "영희", "영희님의 라이브", 1_000)]);
+}
+
+#[tokio::test]
+async fn live_title_of_100_characters_is_accepted() {
+    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+    // 글자 수로 센다: 한글 100자는 300바이트지만 허용된다.
+    let title = "가".repeat(100);
+
+    svc.change_live_title(user_id(&svc, "철수").await, &title)
+        .await
+        .unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&chulsoo, "철수", &title, 1_000)]);
+}
+
+#[tokio::test]
+async fn live_title_longer_than_100_characters_is_rejected() {
+    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    let chulsoo_user = user_id(&svc, "철수").await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+
+    for title in ["가".repeat(101), "a".repeat(101)] {
+        let result = svc.change_live_title(chulsoo_user, &title).await;
+        assert!(
+            matches!(result, Err(ServiceError::TitleTooLong)),
+            "{} -> {result:?}",
+            title.chars().count()
+        );
+    }
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&chulsoo, "철수", "철수님의 라이브", 1_000)]);
+}
+
+#[tokio::test]
+async fn live_title_is_trimmed_before_saving() {
+    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+
+    let saved = svc
+        .change_live_title(user_id(&svc, "철수").await, "  저녁 수다 \t")
+        .await
+        .unwrap();
+
+    assert_eq!(saved, "저녁 수다");
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&chulsoo, "철수", "저녁 수다", 1_000)]);
+}
+
+#[tokio::test]
+async fn blank_live_title_falls_back_to_default_title() {
+    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    let chulsoo_user = user_id(&svc, "철수").await;
+    svc.change_next_live_title(chulsoo_user, "원래 제목")
+        .await
+        .unwrap();
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+
+    // 제목 없는 라이브가 생기지 않게, 비우면 다음 라이브 제목 없이 시작했을 때와 같은 기본 제목이 된다.
+    for blank in ["", "   "] {
+        let saved = svc.change_live_title(chulsoo_user, blank).await.unwrap();
+
+        assert_eq!(saved, "철수님의 라이브", "{blank:?}");
+        let lives = svc.live_channels().await.unwrap();
+        assert_eq!(lives, [live(&chulsoo, "철수", "철수님의 라이브", 1_000)]);
+    }
+}
+
+#[tokio::test]
+async fn live_title_of_unknown_user_is_rejected() {
+    let (svc, _clock, _) = service_with_clock().await;
+    let last_user = svc.list_users().await.unwrap().last().unwrap().id;
+
+    let result = svc.change_live_title(last_user + 1, "제목").await;
+
+    assert!(
+        matches!(result, Err(ServiceError::UnknownUser)),
+        "{result:?}"
+    );
+}
+
+/// 그 사용자의 채널 설정에 보이는 진행 중인 라이브 제목.
+async fn live_title_in_settings(svc: &AppService, user_id: i64) -> Option<String> {
+    let settings = svc.my_channel_settings(user_id).await.unwrap();
+    settings.expect("사용자마다 채널이 있다").live_title
+}
+
+#[tokio::test]
+async fn channel_settings_give_live_title_only_while_live() {
+    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    let chulsoo_user = user_id(&svc, "철수").await;
+    svc.change_next_live_title(chulsoo_user, "오늘은 마인크래프트")
+        .await
+        .unwrap();
+    clock.set(1_000);
+    svc.publish_started(&younghee).await.unwrap();
+
+    assert_eq!(live_title_in_settings(&svc, chulsoo_user).await, None);
+
+    svc.publish_started(&chulsoo).await.unwrap();
+
+    assert_eq!(
+        live_title_in_settings(&svc, chulsoo_user).await.as_deref(),
+        Some("오늘은 마인크래프트")
+    );
+
+    svc.publish_ended(&chulsoo).await.unwrap();
+
+    assert_eq!(live_title_in_settings(&svc, chulsoo_user).await, None);
+}
+
+#[tokio::test]
+async fn changing_live_title_leaves_next_live_title_alone() {
+    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    let chulsoo_user = user_id(&svc, "철수").await;
+    svc.change_next_live_title(chulsoo_user, "오늘은 마인크래프트")
+        .await
+        .unwrap();
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+
+    svc.change_live_title(chulsoo_user, "주제를 바꿨어요")
+        .await
+        .unwrap();
+
+    let settings = svc
+        .my_channel_settings(chulsoo_user)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(settings.live_title.as_deref(), Some("주제를 바꿨어요"));
+    assert_eq!(
+        settings.next_live_title.as_deref(),
+        Some("오늘은 마인크래프트")
+    );
+}
