@@ -166,27 +166,48 @@ enum TitleKind {
     Live,
 }
 
-impl TitleKind {
-    fn heading(self) -> &'static str {
-        match self {
-            TitleKind::NextLive => "다음 라이브 제목",
-            TitleKind::Live => "진행 중인 라이브 제목",
-        }
-    }
+/// 제목 종류마다 다른 화면 값. 종류에 따른 화면 분기는 [`TitleKind::view`] 한 곳에만 둔다.
+struct TitleView {
+    /// 카드 제목이자 입력 칸·저장 버튼의 이름
+    heading: &'static str,
+    /// 카드 제목 앞에 LIVE 표시를 붙이는지
+    live_badge: bool,
+    card_class: &'static str,
+    /// 설명 문장. [`FALLBACK_PLACEHOLDER`] 자리에 그 채널의 자동 제목이 들어간다.
+    description: &'static str,
+}
 
-    fn description(self, nickname: &str) -> String {
-        let fallback = fallback_title(nickname);
+/// [`TitleView::description`]에서 자동 제목이 들어갈 자리.
+const FALLBACK_PLACEHOLDER: &str = "{fallback}";
+
+impl TitleView {
+    /// 채널 이름으로 자동 제목을 채운 설명 문장.
+    fn description_for(&self, channel_name: &str) -> String {
+        self.description
+            .replace(FALLBACK_PLACEHOLDER, &fallback_title(channel_name))
+    }
+}
+
+impl TitleKind {
+    fn view(self) -> TitleView {
         match self {
-            TitleKind::NextLive => format!(
-                "송출을 시작하면 이 제목이 라이브 제목이 됩니다. 비워 두면 자동 제목 \"{fallback}\"가 붙습니다."
-            ),
-            TitleKind::Live => format!(
-                "지금 라이브 중입니다. 바꾼 제목은 열려 있는 시청 페이지에 바로 반영되고, 홈에는 새로고침하면 보입니다. 비우면 자동 제목 \"{fallback}\"가 됩니다."
-            ),
+            TitleKind::NextLive => TitleView {
+                heading: "다음 라이브 제목",
+                live_badge: false,
+                card_class: "settings-card",
+                description: "송출을 시작하면 이 제목이 라이브 제목이 됩니다. 비워 두면 자동 제목 \"{fallback}\"가 붙습니다.",
+            },
+            TitleKind::Live => TitleView {
+                heading: "진행 중인 라이브 제목",
+                live_badge: true,
+                card_class: "settings-card live-title-card",
+                description: "지금 라이브 중입니다. 바꾼 제목은 열려 있는 시청 페이지에 바로 반영되고, 홈에는 새로고침하면 보입니다. 비우면 자동 제목 \"{fallback}\"가 됩니다.",
+            },
         }
     }
 
     /// 서버에 저장하고, 서버가 다듬은 제목을 돌려준다(다음 라이브 제목을 지웠으면 빈 문자열).
+    /// 종류마다 부르는 서버 함수가 달라 화면 값([`TitleKind::view`])과 따로 둔다.
     async fn save(self, title: String) -> Result<String, ServerFnError> {
         match self {
             TitleKind::NextLive => api::change_next_live_title(title)
@@ -222,18 +243,15 @@ fn TitleEditor(kind: TitleKind, saved: String, nickname: String) -> Element {
         "title-count"
     };
 
-    let heading = kind.heading();
-    let description = kind.description(&nickname);
+    let view = kind.view();
+    let heading = view.heading;
+    let description = view.description_for(&nickname);
     let placeholder = fallback_title(&nickname);
-    let card_class = match kind {
-        TitleKind::NextLive => "settings-card",
-        TitleKind::Live => "settings-card live-title-card",
-    };
 
     rsx! {
-        section { class: "{card_class}",
+        section { class: view.card_class,
             h2 {
-                if kind == TitleKind::Live {
+                if view.live_badge {
                     span { class: "live-badge", "LIVE" }
                     " "
                 }
