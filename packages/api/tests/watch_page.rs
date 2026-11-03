@@ -1,24 +1,11 @@
 //! 경계 A: 앱 서비스의 시청 페이지 정보. 테스트마다 새 메모리 SQLite를 쓰고,
 //! 서비스의 공개 동작(사용자 만들기, 송출 시작·종료 반영)으로만 상태를 만든다.
 
-use std::sync::{
-    atomic::{AtomicI64, Ordering},
-    Arc,
-};
+mod common;
 
 use api::dto::{OpenLive, WatchPage};
-use api::service::{db, AppService};
-
-/// 테스트가 움직이는 시계(유닉스 밀리초)를 쓰는 서비스.
-async fn service_with_clock() -> (AppService, Arc<AtomicI64>) {
-    let now = Arc::new(AtomicI64::new(0));
-    let time = now.clone();
-    let svc = AppService::with_clock(
-        db::connect_memory().await.expect("메모리 DB 연결"),
-        Arc::new(move || time.load(Ordering::SeqCst)),
-    );
-    (svc, now)
-}
+use api::service::AppService;
+use common::service_with_clock;
 
 /// 사용자 "철수"를 만들고 그 채널 ID를 돌려준다.
 async fn chulsoo_channel(svc: &AppService) -> String {
@@ -27,11 +14,11 @@ async fn chulsoo_channel(svc: &AppService) -> String {
 
 #[tokio::test]
 async fn live_channel_watch_page_shows_open_live_and_playback_url() {
-    let (svc, now) = service_with_clock().await;
+    let (svc, clock) = service_with_clock().await;
     let channel_id = chulsoo_channel(&svc).await;
-    now.store(1_000, Ordering::SeqCst);
+    clock.set(1_000);
     svc.publish_started(&channel_id).await.unwrap();
-    now.store(9_000, Ordering::SeqCst);
+    clock.set(9_000);
 
     let page = svc.watch_page(&channel_id).await.unwrap();
 
@@ -66,13 +53,13 @@ async fn channel_that_never_went_live_is_offline() {
 
 #[tokio::test]
 async fn channel_whose_live_ended_is_offline() {
-    let (svc, now) = service_with_clock().await;
+    let (svc, clock) = service_with_clock().await;
     let channel_id = chulsoo_channel(&svc).await;
     let younghee = svc.create_user("영희").await.unwrap().channel_id;
-    now.store(1_000, Ordering::SeqCst);
+    clock.set(1_000);
     svc.publish_started(&channel_id).await.unwrap();
     svc.publish_started(&younghee).await.unwrap();
-    now.store(5_000, Ordering::SeqCst);
+    clock.set(5_000);
 
     svc.publish_ended(&channel_id).await.unwrap();
 

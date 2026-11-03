@@ -1,18 +1,17 @@
 //! 경계 B: MediaMTX 연동 HTTP. 앱이 합치는 axum Router에 요청을 직접 넣고 응답만 확인한다.
 
+mod common;
+
 use api::dto::MyChannelSettings;
 use api::mediamtx;
-use api::service::{db, AppService};
+use api::service::AppService;
 use axum::{
     body::Body,
     http::{Request, Response, StatusCode},
     Router,
 };
+use common::service;
 use tower::ServiceExt; // oneshot
-
-async fn service() -> AppService {
-    AppService::new(db::connect_memory().await.expect("메모리 DB 연결"))
-}
 
 /// 기본 사용자를 넣고 첫 사용자의 채널 설정을 돌려준다.
 async fn seeded_channel(svc: &AppService) -> MyChannelSettings {

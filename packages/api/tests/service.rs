@@ -1,16 +1,10 @@
 //! 경계 A: 앱 서비스. 테스트마다 새 메모리 SQLite를 쓰고, 서비스의 공개 동작으로만 확인한다.
 
-use std::sync::{
-    atomic::{AtomicI64, Ordering},
-    Arc,
-};
+mod common;
 
 use api::dto::{LiveChannel, MyChannelSettings};
-use api::service::{db, AppService, ServiceError};
-
-async fn service() -> AppService {
-    AppService::new(db::connect_memory().await.expect("메모리 DB 연결"))
-}
+use api::service::{AppService, ServiceError};
+use common::{service, FakeClock};
 
 fn nicknames(users: &[api::dto::User]) -> Vec<&str> {
     users.iter().map(|u| u.nickname.as_str()).collect()
@@ -449,24 +443,9 @@ async fn next_live_title_of_unknown_user_is_rejected() {
 
 // ---- 라이브: 송출 시작·종료 반영과 라이브 중인 채널 목록 ----
 
-/// 테스트가 움직이는 시계. 처음에는 0(유닉스 밀리초)이다.
-#[derive(Clone, Default)]
-struct FakeClock(Arc<AtomicI64>);
-
-impl FakeClock {
-    fn set(&self, now_ms: i64) {
-        self.0.store(now_ms, Ordering::SeqCst);
-    }
-}
-
 /// 가짜 시계를 쓰는 서비스와 기본 사용자(철수·영희·민수)의 채널 ID.
-async fn service_with_clock() -> (AppService, FakeClock, [String; 3]) {
-    let clock = FakeClock::default();
-    let time = clock.0.clone();
-    let svc = AppService::with_clock(
-        db::connect_memory().await.expect("메모리 DB 연결"),
-        Arc::new(move || time.load(Ordering::SeqCst)),
-    );
+async fn seeded_service_with_clock() -> (AppService, FakeClock, [String; 3]) {
+    let (svc, clock) = common::service_with_clock().await;
     let ids: Vec<String> = seeded_channels(&svc)
         .await
         .into_iter()
@@ -486,7 +465,7 @@ fn live(channel_id: &str, channel_name: &str, title: &str, started_at_ms: i64) -
 
 #[tokio::test]
 async fn publish_started_opens_live_titled_after_channel_name() {
-    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, ..]) = seeded_service_with_clock().await;
     clock.set(1_000);
 
     svc.publish_started(&chulsoo).await.unwrap();
@@ -497,7 +476,7 @@ async fn publish_started_opens_live_titled_after_channel_name() {
 
 #[tokio::test]
 async fn publish_ended_closes_live() {
-    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, ..]) = seeded_service_with_clock().await;
     svc.publish_started(&chulsoo).await.unwrap();
     clock.set(5_000);
 
@@ -508,7 +487,7 @@ async fn publish_ended_closes_live() {
 
 #[tokio::test]
 async fn live_channels_are_listed_most_recently_started_first() {
-    let (svc, clock, [chulsoo, younghee, minsu]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, younghee, minsu]) = seeded_service_with_clock().await;
     clock.set(1_000);
     svc.publish_started(&younghee).await.unwrap();
     clock.set(2_000);
@@ -530,7 +509,7 @@ async fn live_channels_are_listed_most_recently_started_first() {
 
 #[tokio::test]
 async fn publish_ended_closes_only_that_channels_live() {
-    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, younghee, _]) = seeded_service_with_clock().await;
     clock.set(1_000);
     svc.publish_started(&chulsoo).await.unwrap();
     clock.set(2_000);
@@ -544,7 +523,7 @@ async fn publish_ended_closes_only_that_channels_live() {
 
 #[tokio::test]
 async fn publish_started_while_live_replaces_open_live_with_new_one() {
-    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, ..]) = seeded_service_with_clock().await;
     clock.set(1_000);
     svc.publish_started(&chulsoo).await.unwrap();
     clock.set(2_000);
@@ -557,7 +536,7 @@ async fn publish_started_while_live_replaces_open_live_with_new_one() {
 
 #[tokio::test]
 async fn publishing_again_after_it_ended_starts_new_live() {
-    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, younghee, _]) = seeded_service_with_clock().await;
     clock.set(1_000);
     svc.publish_started(&chulsoo).await.unwrap();
     clock.set(2_000);
@@ -580,7 +559,7 @@ async fn publishing_again_after_it_ended_starts_new_live() {
 
 #[tokio::test]
 async fn publish_ended_without_open_live_changes_nothing() {
-    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, younghee, _]) = seeded_service_with_clock().await;
     clock.set(1_000);
     svc.publish_started(&chulsoo).await.unwrap();
 
@@ -593,7 +572,7 @@ async fn publish_ended_without_open_live_changes_nothing() {
 
 #[tokio::test]
 async fn publish_started_on_unknown_channel_is_rejected() {
-    let (svc, _clock, _) = service_with_clock().await;
+    let (svc, _clock, _) = seeded_service_with_clock().await;
 
     let result = svc.publish_started("nosuchchanne").await;
 
@@ -608,7 +587,7 @@ async fn publish_started_on_unknown_channel_is_rejected() {
 
 #[tokio::test]
 async fn reconciling_with_no_publishing_channels_closes_every_open_live() {
-    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, younghee, _]) = seeded_service_with_clock().await;
     clock.set(1_000);
     svc.publish_started(&chulsoo).await.unwrap();
     svc.publish_started(&younghee).await.unwrap();
@@ -621,7 +600,7 @@ async fn reconciling_with_no_publishing_channels_closes_every_open_live() {
 
 #[tokio::test]
 async fn reconciling_opens_live_for_publishing_channel_without_open_live() {
-    let (svc, clock, [_, younghee, _]) = service_with_clock().await;
+    let (svc, clock, [_, younghee, _]) = seeded_service_with_clock().await;
     clock.set(9_000);
 
     svc.reconcile_publishing(std::slice::from_ref(&younghee))
@@ -634,7 +613,7 @@ async fn reconciling_opens_live_for_publishing_channel_without_open_live() {
 
 #[tokio::test]
 async fn reconciling_keeps_open_live_of_publishing_channel() {
-    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, ..]) = seeded_service_with_clock().await;
     clock.set(1_000);
     svc.publish_started(&chulsoo).await.unwrap();
     clock.set(9_000);
@@ -650,7 +629,7 @@ async fn reconciling_keeps_open_live_of_publishing_channel() {
 
 #[tokio::test]
 async fn reconciling_closes_ghost_lives_and_opens_missing_ones_together() {
-    let (svc, clock, [chulsoo, younghee, minsu]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, younghee, minsu]) = seeded_service_with_clock().await;
     clock.set(1_000);
     svc.publish_started(&chulsoo).await.unwrap();
     clock.set(2_000);
@@ -674,7 +653,7 @@ async fn reconciling_closes_ghost_lives_and_opens_missing_ones_together() {
 
 #[tokio::test]
 async fn reconciling_skips_publishing_path_that_is_not_a_channel() {
-    let (svc, clock, [_, younghee, _]) = service_with_clock().await;
+    let (svc, clock, [_, younghee, _]) = seeded_service_with_clock().await;
     clock.set(9_000);
 
     svc.reconcile_publishing(&["nosuchchanne".to_string(), younghee.clone()])
@@ -696,7 +675,7 @@ async fn user_id(svc: &AppService, nickname: &str) -> i64 {
 
 #[tokio::test]
 async fn publish_started_opens_live_titled_with_next_live_title() {
-    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, ..]) = seeded_service_with_clock().await;
     let chulsoo_user = user_id(&svc, "철수").await;
     svc.change_next_live_title(chulsoo_user, "오늘은 마인크래프트")
         .await
@@ -714,7 +693,7 @@ async fn publish_started_opens_live_titled_with_next_live_title() {
 
 #[tokio::test]
 async fn changed_live_title_shows_in_live_channels() {
-    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, younghee, _]) = seeded_service_with_clock().await;
     clock.set(1_000);
     svc.publish_started(&chulsoo).await.unwrap();
     clock.set(2_000);
@@ -739,7 +718,7 @@ async fn changed_live_title_shows_in_live_channels() {
 
 #[tokio::test]
 async fn live_title_cannot_be_changed_when_not_live() {
-    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, younghee, _]) = seeded_service_with_clock().await;
     let chulsoo_user = user_id(&svc, "철수").await;
     // 한 번도 라이브를 하지 않은 채널(영희는 라이브 중이지만 남의 채널이다)
     clock.set(1_000);
@@ -765,7 +744,7 @@ async fn live_title_cannot_be_changed_when_not_live() {
 
 #[tokio::test]
 async fn live_title_of_100_characters_is_accepted() {
-    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, ..]) = seeded_service_with_clock().await;
     clock.set(1_000);
     svc.publish_started(&chulsoo).await.unwrap();
     // 글자 수로 센다: 한글 100자는 300바이트지만 허용된다.
@@ -781,7 +760,7 @@ async fn live_title_of_100_characters_is_accepted() {
 
 #[tokio::test]
 async fn live_title_longer_than_100_characters_is_rejected() {
-    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, ..]) = seeded_service_with_clock().await;
     let chulsoo_user = user_id(&svc, "철수").await;
     clock.set(1_000);
     svc.publish_started(&chulsoo).await.unwrap();
@@ -800,7 +779,7 @@ async fn live_title_longer_than_100_characters_is_rejected() {
 
 #[tokio::test]
 async fn live_title_is_trimmed_before_saving() {
-    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, ..]) = seeded_service_with_clock().await;
     clock.set(1_000);
     svc.publish_started(&chulsoo).await.unwrap();
 
@@ -816,7 +795,7 @@ async fn live_title_is_trimmed_before_saving() {
 
 #[tokio::test]
 async fn blank_live_title_becomes_fallback_title() {
-    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, ..]) = seeded_service_with_clock().await;
     let chulsoo_user = user_id(&svc, "철수").await;
     svc.change_next_live_title(chulsoo_user, "원래 제목")
         .await
@@ -836,7 +815,7 @@ async fn blank_live_title_becomes_fallback_title() {
 
 #[tokio::test]
 async fn live_title_of_unknown_user_is_rejected() {
-    let (svc, _clock, _) = service_with_clock().await;
+    let (svc, _clock, _) = seeded_service_with_clock().await;
     let last_user = svc.list_users().await.unwrap().last().unwrap().id;
 
     let result = svc.change_live_title(last_user + 1, "제목").await;
@@ -855,7 +834,7 @@ async fn live_title_in_settings(svc: &AppService, user_id: i64) -> Option<String
 
 #[tokio::test]
 async fn channel_settings_give_live_title_only_while_live() {
-    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, younghee, _]) = seeded_service_with_clock().await;
     let chulsoo_user = user_id(&svc, "철수").await;
     svc.change_next_live_title(chulsoo_user, "오늘은 마인크래프트")
         .await
@@ -879,7 +858,7 @@ async fn channel_settings_give_live_title_only_while_live() {
 
 #[tokio::test]
 async fn changing_live_title_leaves_next_live_title_alone() {
-    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    let (svc, clock, [chulsoo, ..]) = seeded_service_with_clock().await;
     let chulsoo_user = user_id(&svc, "철수").await;
     svc.change_next_live_title(chulsoo_user, "오늘은 마인크래프트")
         .await

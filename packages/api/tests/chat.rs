@@ -1,31 +1,13 @@
 //! 경계 A: 앱 서비스의 채팅(채팅 참여, 채팅 보내기, 라이브 종료 알림). 테스트마다 새 메모리 SQLite를
 //! 쓰고, 서비스의 공개 동작(사용자 만들기, 송출 시작·종료 반영, 채팅 참여·보내기)으로만 확인한다.
 
-use std::sync::{
-    atomic::{AtomicI64, Ordering},
-    Arc,
-};
+mod common;
+
 use std::time::Duration;
 
 use api::dto::ChatMessage;
-use api::service::{db, AppService, ChatEvent, ChatSubscription, ServiceError};
-
-/// 테스트가 움직이는 시계(유닉스 밀리초)를 쓰는 서비스.
-async fn service_with_clock() -> (AppService, Arc<AtomicI64>) {
-    let now = Arc::new(AtomicI64::new(0));
-    let time = now.clone();
-    let svc = AppService::with_clock(
-        db::connect_memory().await.expect("메모리 DB 연결"),
-        Arc::new(move || time.load(Ordering::SeqCst)),
-    );
-    (svc, now)
-}
-
-/// 사용자를 만들고 (사용자 ID, 채널 ID)를 돌려준다.
-async fn user(svc: &AppService, nickname: &str) -> (i64, String) {
-    let created = svc.create_user(nickname).await.unwrap();
-    (created.user.id, created.channel_id)
-}
+use api::service::{ChatEvent, ChatSubscription, ServiceError};
+use common::{service_with_clock, user};
 
 /// 구독의 다음 이벤트. 오지 않으면 테스트가 멈추지 않게 1초 뒤 실패한다.
 async fn next_event(subscription: &mut ChatSubscription) -> Option<ChatEvent> {
@@ -44,13 +26,13 @@ fn message(nickname: &str, content: &str, sent_at_ms: i64) -> ChatEvent {
 
 #[tokio::test]
 async fn both_subscriptions_on_same_channel_receive_message_with_nickname_and_time() {
-    let (svc, now) = service_with_clock().await;
+    let (svc, clock) = service_with_clock().await;
     let (_, chulsoo_channel) = user(&svc, "철수").await;
     let (younghee, _) = user(&svc, "영희").await;
     svc.publish_started(&chulsoo_channel).await.unwrap();
     let mut first = svc.join_chat(&chulsoo_channel).await.unwrap();
     let mut second = svc.join_chat(&chulsoo_channel).await.unwrap();
-    now.store(7_000, Ordering::SeqCst);
+    clock.set(7_000);
 
     svc.send_chat(younghee, &chulsoo_channel, "안녕하세요")
         .await
