@@ -1,0 +1,504 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f7f7f8;
+  --fg: #16161a;
+  --muted: #6b6b76;
+  --bar-bg: #ffffff;
+  --border: #e2e2e8;
+  --accent: #00b871;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141517;
+    --fg: #ececf1;
+    --muted: #9a9aa5;
+    --bar-bg: #1c1d20;
+    --border: #2c2d31;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, "Malgun Gothic", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--bar-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar .brand {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.user-menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-menu input,
+.user-menu button {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.user-menu button {
+  cursor: pointer;
+}
+
+/* 메뉴를 여는 버튼: 현재 사용자(고르지 않았으면 "시청만 가능")와 펼침 표시. */
+.user-menu .user-menu-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 140px;
+}
+
+.user-menu-current.viewer-only {
+  color: var(--muted);
+}
+
+.user-menu-caret {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* 메뉴 바깥을 누르면 닫히도록 화면 전체를 덮는 투명한 층. */
+.user-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+}
+
+/* 펼친 메뉴: 상단 바 높이를 바꾸지 않도록 버튼 아래에 띄운다. */
+.user-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 260px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bar-bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.user-menu-heading {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.user-menu-note {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.user-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.user-menu .user-option {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+.user-menu .user-option:hover {
+  background: var(--bg);
+}
+
+.user-menu .user-option.selected {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.user-menu-create {
+  display: flex;
+  gap: 6px;
+}
+
+.user-menu-create input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 거절 사유: 메뉴 안, 새 닉네임 입력 아래. */
+.user-menu-error {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #d93025;
+  color: #fff;
+  font-size: 0.85rem;
+}
+
+.page {
+  padding: 16px;
+}
+
+/* 상단 바 메뉴: 로고 바로 옆에 두고 남는 공간은 오른쪽(사용자 메뉴 앞)으로 민다. */
+.topnav {
+  margin-right: auto;
+}
+
+.topnav a {
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.topnav a:hover {
+  color: var(--accent);
+}
+
+/* ---- 내 채널 설정 ---- */
+
+.settings {
+  max-width: 640px;
+}
+
+.settings-card {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bar-bg);
+}
+
+.settings-card h2 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+.notice {
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bar-bg);
+}
+
+.field {
+  margin: 12px 0;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.field-row {
+  display: flex;
+  gap: 8px;
+}
+
+.field-row input,
+.field-row button {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.field-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.field-row .copy-value {
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.field-row button {
+  cursor: pointer;
+}
+
+.field-status,
+.form-ok {
+  margin: 4px 0 0;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.form-error {
+  margin: 4px 0 0;
+  color: #d93025;
+  font-size: 0.85rem;
+}
+
+.title-count {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.title-count.over {
+  color: #d93025;
+}
+
+/* 진행 중인 라이브 제목: 라이브 중일 때만 나타난다 */
+.live-title-card {
+  border-left: 4px solid #e5263b;
+}
+
+.live-title-card h2 .live-badge {
+  font-size: 0.75rem;
+  vertical-align: middle;
+}
+
+/* ---- 홈: 라이브 카드 ---- */
+
+.home h1 {
+  margin: 0 0 16px;
+  font-size: 1.3rem;
+}
+
+.live-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.live-card {
+  height: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bar-bg);
+}
+
+.live-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+}
+
+.live-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #e5263b;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.live-elapsed {
+  color: var(--muted);
+}
+
+.live-title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.live-channel {
+  margin: 0;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 카드 전체가 시청 페이지 링크다. */
+.live-card-link {
+  display: block;
+  height: 100%;
+  color: inherit;
+  text-decoration: none;
+}
+
+.live-card-link:hover .live-card,
+.live-card-link:focus-visible .live-card {
+  border-color: var(--accent);
+}
+
+/* ---- 시청 페이지 ---- */
+
+.watch {
+  max-width: 1100px;
+}
+
+.watch-player,
+.watch-offline {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: #000;
+}
+
+.watch-offline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.offline-badge {
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: #3a3b40;
+  color: #fff;
+  font-weight: 700;
+}
+
+.watch-info {
+  margin: 12px 0;
+}
+
+.watch-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 1.2rem;
+  overflow-wrap: anywhere;
+}
+
+.watch-title .live-badge {
+  font-size: 0.75rem;
+}
+
+.watch-channel {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.watch-info .muted {
+  margin: 0;
+}
+
+/* 플레이어와, 라이브가 끝났을 때 그 위에 덮는 안내 */
+.watch-stage {
+  position: relative;
+}
+
+.watch-ended {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.ended-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #3a3b40;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* ---- 채팅 ---- */
+
+.chat {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bar-bg);
+}
+
+.chat-heading {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.chat-messages {
+  height: 280px;
+  margin: 0 0 10px;
+  padding: 8px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.chat-message {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+
+.chat-nickname {
+  margin-right: 8px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.chat-input .field-row input:disabled,
+.chat-input .field-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.chat-guide,
+.chat-closed {
+  margin: 6px 0 0;
+}
+
+.chat-count {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.chat-count.over {
+  color: #d93025;
+}

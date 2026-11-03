@@ -1,0 +1,63 @@
+[package]
+name = "api"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dioxus = { workspace = true, features = ["fullstack"] }
+serde = { workspace = true }
+
+# ---- 서버 전용: `server` feature로만 켠다. 웹(wasm) 빌드에 들어가면 안 된다. ----
+sqlx = { version = "=0.8.6", features = ["runtime-tokio", "sqlite"], optional = true }
+rand = { version = "0.9", optional = true }
+thiserror = { version = "2", optional = true }
+anyhow = { version = "1", optional = true }
+tracing = { version = "0.1", optional = true }
+# MediaMTX 연동 엔드포인트(`mediamtx` 모듈). dioxus가 쓰는 axum 0.8과 같은 크레이트로 합쳐진다.
+axum = { version = "0.8", optional = true }
+form_urlencoded = { version = "1", optional = true }
+# 앱 시작 시 MediaMTX Control API 조회(`server::mediamtx_api`). dioxus-fullstack이 쓰는 reqwest 0.12와 합쳐진다.
+reqwest = { version = "0.12", default-features = false, features = ["json"], optional = true }
+# 채팅: 채널별 broadcast(`service::chat`)와 채팅 WebSocket 어댑터의 `select!`. dioxus 서버가 쓰는 tokio와 합쳐진다.
+tokio = { version = "1", features = ["sync", "macros"], optional = true }
+
+[features]
+# 이름을 바꾸면 안 된다: 서버 함수 매크로가 `feature = "server"`를 전제로 코드를 만든다.
+server = [
+    "dioxus/server",
+    "dep:sqlx",
+    "dep:rand",
+    "dep:thiserror",
+    "dep:anyhow",
+    "dep:tracing",
+    "dep:axum",
+    "dep:form_urlencoded",
+    "dep:reqwest",
+    "dep:tokio",
+]
+
+[dev-dependencies]
+tokio = { version = "1.48", features = ["macros", "rt", "time"] }
+tower = { version = "0.5", features = ["util"] }
+serde_json = "1"
+
+# `server` feature 없이 `cargo test -p api`를 돌리면 건너뛴다.
+[[test]]
+name = "service"
+path = "tests/service.rs"
+required-features = ["server"]
+
+[[test]]
+name = "mediamtx_http"
+path = "tests/mediamtx_http.rs"
+required-features = ["server"]
+
+[[test]]
+name = "watch_page"
+path = "tests/watch_page.rs"
+required-features = ["server"]
+
+[[test]]
+name = "chat"
+path = "tests/chat.rs"
+required-features = ["server"]

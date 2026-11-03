@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+# web: 화면·라우팅·실행 파일 / api: 서버 함수·DB·앱 서비스
+members = ["packages/web", "packages/api"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+dioxus = { version = "=0.7.10" }
+api = { path = "packages/api" }
+serde = { version = "1", features = ["derive"] }

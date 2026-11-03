@@ -1,0 +1,14 @@
+[package]
+name = "web"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dioxus = { workspace = true, features = ["router", "fullstack"] }
+api = { workspace = true }
+
+# dx가 클라이언트 빌드에는 `web`, 서버 빌드에는 `server`를 켠다. default에 넣지 않는다.
+[features]
+default = []
+web = ["dioxus/web"]
+server = ["dioxus/server", "api/server"]
