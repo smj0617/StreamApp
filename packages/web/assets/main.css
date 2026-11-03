@@ -1,0 +1,60 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f7f7f8;
+  --fg: #16161a;
+  --muted: #6b6b76;
+  --bar-bg: #ffffff;
+  --border: #e2e2e8;
+  --accent: #00b871;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141517;
+    --fg: #ececf1;
+    --muted: #9a9aa5;
+    --bar-bg: #1c1d20;
+    --border: #2c2d31;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, "Malgun Gothic", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--bar-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar .brand {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.user-menu {
+  min-width: 160px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.page {
+  padding: 16px;
+}

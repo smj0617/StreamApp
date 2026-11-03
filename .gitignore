@@ -1,0 +1,8 @@
+# Rust·dx 빌드 산출물
+/target/
+
+# 앱의 SQLite DB 파일 (기본 경로 data/streamapp.db, 환경변수 STREAMAPP_DB로 바꿀 수 있음)
+/data/
+
+# 개발 스크립트가 내려받는 도구 (MediaMTX 실행 파일 등)
+/tools/
