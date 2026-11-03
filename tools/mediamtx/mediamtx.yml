@@ -1,0 +1,57 @@
+# StreamApp 로컬 개발용 MediaMTX v1.21.3 설정. scripts\dev.ps1이 이 파일로 MediaMTX를 띄운다.
+#
+# - 적지 않은 키는 MediaMTX 기본값을 쓴다. 키 설명은 v1.21.3 기본 설정 파일을 본다:
+#   https://github.com/bluenviron/mediamtx/blob/v1.21.3/mediamtx.yml
+# - 환경 변수 MTX_<대문자 키>가 이 파일의 값을 덮어쓴다(리스트는 쉼표로 구분).
+#   dev.ps1은 앱 포트(-Port)에 맞춰 MTX_AUTHHTTPADDRESS와 MTX_HLSALLOWORIGINS를 정해 띄운다.
+# - 실행 중에 이 파일을 고치면 MediaMTX가 다시 읽는다.
+# - 검사: .tools\mediamtx-v1.21.3\mediamtx.exe --validate-conf=tools\mediamtx\mediamtx.yml
+
+logLevel: info
+
+###############################################
+# 인증: 송출 키 확인은 앱이 한다(ADR 0002).
+# MediaMTX는 동작마다 authHTTPAddress로 JSON(action, path, query 등)을 POST하고, 2xx면 허용한다.
+authMethod: http
+# localhost 대신 127.0.0.1: dx serve는 127.0.0.1에만 바인드하고, Windows에서 localhost는 ::1로 먼저 풀릴 수 있다.
+authHTTPAddress: http://127.0.0.1:8080/internal/mediamtx/auth
+authHTTPExclude:
+  # 필수: 앱이 시작할 때 부르는 Control API 요청이 다시 앱의 인증으로 돌아오지 않게 한다.
+  - action: api
+  - action: metrics
+  - action: pprof
+  # 시청은 누구나 할 수 있으므로 앱에 묻지 않는다(앱도 허용한다). HLS 요청마다 앱을 부르지 않고,
+  # 앱이 다시 빌드되는 동안에도 재생이 끊기지 않는다.
+  - action: read
+  - action: playback
+
+###############################################
+# Control API: 앱이 지금 송출 중인 경로를 조회한다.
+api: true
+apiAddress: :9997
+
+###############################################
+# RTMP: OBS·ffmpeg 송출. 주소는 rtmp://localhost/<채널ID>?key=<송출 키>
+rtmp: true
+rtmpAddress: :1935
+
+###############################################
+# HLS: 브라우저 재생. 주소는 http://localhost:8888/<채널ID>/index.m3u8
+hls: true
+hlsAddress: :8888
+# 앱의 출처. localhost와 127.0.0.1은 서로 다른 출처라 둘 다 적는다.
+hlsAllowOrigins: ['http://localhost:8080', 'http://127.0.0.1:8080']
+# 송출이 시작되면 바로 HLS를 만든다(첫 재생 요청의 지연과 404를 없앤다).
+hlsAlwaysRemux: true
+
+###############################################
+# 쓰지 않는 서버는 끈다(포트 충돌과 방화벽 팝업을 줄인다).
+rtsp: false
+webrtc: false
+srt: false
+moq: false
+
+###############################################
+# 경로: all_others가 있어야 아무 경로(채널 ID)로나 송출할 수 있다. 누가 송출할 수 있는지는 인증이 정한다.
+paths:
+  all_others:

@@ -5,11 +5,16 @@
 .DESCRIPTION
     1. cargo, wasm32-unknown-unknown 타깃, dx 0.7.10, ffmpeg가 있는지 확인한다.
        하나라도 없으면 무엇을 설치해야 하는지 알려 주고 멈춘다.
-    2. 레포 루트에서 `dx serve --package web --port <Port>`를 실행한다.
+    2. MediaMTX v1.21.3이 없으면 공식 GitHub 릴리스에서 git에서 제외한 .tools\ 폴더로 내려받는다
+       (체크섬을 확인한다).
+    3. 레포의 설정(tools\mediamtx\mediamtx.yml)으로 MediaMTX를 실행한다.
+       RTMP 1935, HLS 8888, Control API 9997을 쓰고, 로그는 .tools\mediamtx.log에 쓴다.
+    4. 레포 루트에서 `dx serve --package web --port <Port>`를 실행한다.
        DB 파일은 레포 루트의 data\streamapp.db에 생긴다(지우고 다시 실행하면 초기 상태로 돌아간다).
+       dx serve가 끝나면(Ctrl+C 포함) MediaMTX도 끈다.
 
 .PARAMETER Port
-    앱 포트. 기본 8080.
+    앱 포트. 기본 8080. MediaMTX가 부르는 앱 주소(인증)와 HLS가 허용하는 출처도 이 포트로 맞춘다.
 
 .PARAMETER NoBrowser
     브라우저를 자동으로 열지 않는다.
@@ -74,13 +79,103 @@ if ($Problems.Count -gt 0) {
     exit 1
 }
 
-Write-Host "도구 확인 완료. http://127.0.0.1:$Port 에서 앱을 띄웁니다." -ForegroundColor Green
+Write-Host '도구 확인 완료.' -ForegroundColor Green
+
+# ---- MediaMTX: 실행 파일은 git에서 제외한 .tools\ 에, 설정은 레포의 tools\mediamtx\ 에 있다(ADR 0002). ----
+$MtxVersion = 'v1.21.3'
+# 릴리스의 checksums.sha256에 적힌 mediamtx_v1.21.3_windows_amd64.zip의 SHA-256. 버전을 바꾸면 함께 바꾼다.
+$MtxZipSha256 = 'b2f5246b07cb72961df03b8d5e8cad43dc657bcf3f49a87bb031bdf22721af74'
+$MtxDir = Join-Path $RepoRoot ".tools\mediamtx-$MtxVersion"
+$MtxExe = Join-Path $MtxDir 'mediamtx.exe'
+$MtxConf = Join-Path $RepoRoot 'tools\mediamtx\mediamtx.yml'
+
+if (-not (Test-Path $MtxExe)) {
+    $ZipName = "mediamtx_${MtxVersion}_windows_amd64.zip"
+    $ZipUrl = "https://github.com/bluenviron/mediamtx/releases/download/$MtxVersion/$ZipName"
+    $Zip = Join-Path $RepoRoot ".tools\$ZipName"
+    $Staging = "$MtxDir.partial"
+    Write-Host "MediaMTX $MtxVersion 이 없어 내려받습니다: $ZipUrl"
+    try {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Zip) | Out-Null
+        # PowerShell 5.1의 진행 표시줄은 내려받기를 크게 느리게 한다.
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -UseBasicParsing -Uri $ZipUrl -OutFile $Zip
+        $ZipHash = (Get-FileHash -Algorithm SHA256 -Path $Zip).Hash
+        if ($ZipHash -ne $MtxZipSha256) {
+            throw "체크섬이 다릅니다(기대 $MtxZipSha256, 실제 $ZipHash)."
+        }
+        # 압축을 다 푼 뒤에 폴더 이름을 바꿔, 중간에 멈춰도 반쯤 풀린 폴더를 쓰지 않게 한다.
+        if (Test-Path $Staging) {
+            Remove-Item -Recurse -Force $Staging
+        }
+        Expand-Archive -Path $Zip -DestinationPath $Staging
+        Move-Item -Path $Staging -Destination $MtxDir
+    }
+    catch {
+        Write-Host "MediaMTX를 내려받지 못해 멈춥니다: $_" -ForegroundColor Red
+        Write-Host "직접 받으려면 $ZipUrl 의 압축을 $MtxDir 에 푸세요." -ForegroundColor Yellow
+        exit 1
+    }
+    finally {
+        Remove-Item -Force -ErrorAction SilentlyContinue $Zip
+    }
+}
+
+# 여기부터는 네이티브 명령(mediamtx, dx)의 성공 여부를 종료 코드로 판단한다. 'Stop'으로 두면 출력을
+# 파일로 돌렸을 때 PowerShell 5.1이 stderr 한 줄(예: dx의 "warning: Waiting for cargo-metadata...")을
+# 오류로 보고 스크립트를 멈춘다.
+$ErrorActionPreference = 'Continue'
+
+& $MtxExe "--validate-conf=$MtxConf"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "MediaMTX 설정이 올바르지 않아 멈춥니다: $MtxConf" -ForegroundColor Red
+    exit 1
+}
+
+# MediaMTX 로그는 화면 대신 파일에 쓴다(dx serve 화면과 섞이지 않게). 실행할 때마다 새로 쓴다.
+$MtxLog = Join-Path $RepoRoot '.tools\mediamtx.log'
+Remove-Item -Force -ErrorAction SilentlyContinue $MtxLog
+
+# 설정 파일의 값을 환경 변수(MTX_<대문자 키>)로 덮어쓴다: 앱 포트에 맞춘 주소와 로그 파일.
+# MediaMTX 프로세스에만 넘기고 바로 되돌린다.
+$MtxEnv = @{
+    MTX_AUTHHTTPADDRESS = "http://127.0.0.1:$Port/internal/mediamtx/auth"
+    MTX_HLSALLOWORIGINS = "http://localhost:$Port,http://127.0.0.1:$Port"
+    MTX_LOGDESTINATIONS = 'file'
+    MTX_LOGFILE         = $MtxLog
+}
+$SavedEnv = @{}
+foreach ($Name in $MtxEnv.Keys) {
+    $SavedEnv[$Name] = [Environment]::GetEnvironmentVariable($Name, 'Process')
+    [Environment]::SetEnvironmentVariable($Name, $MtxEnv[$Name], 'Process')
+}
+try {
+    # 같은 콘솔에 붙여 띄운다: 콘솔 창을 닫거나 Ctrl+C를 누르면 MediaMTX도 함께 끝나 혼자 남지 않는다.
+    $Mtx = Start-Process -FilePath $MtxExe -ArgumentList "`"$MtxConf`"" -WorkingDirectory $RepoRoot -NoNewWindow -PassThru
+}
+finally {
+    foreach ($Name in $SavedEnv.Keys) {
+        [Environment]::SetEnvironmentVariable($Name, $SavedEnv[$Name], 'Process')
+    }
+}
+
+Start-Sleep -Seconds 1
+if ($Mtx.HasExited) {
+    Write-Host "MediaMTX가 바로 종료되어 멈춥니다. 포트 1935, 8888, 9997을 다른 프로그램이 쓰고 있지 않은지 확인하세요. 로그($MtxLog):" -ForegroundColor Red
+    Get-Content -ErrorAction SilentlyContinue -Tail 20 $MtxLog
+    exit 1
+}
+Write-Host "MediaMTX $MtxVersion 실행 중(RTMP 1935, HLS 8888, Control API 9997). 로그: $MtxLog" -ForegroundColor Green
+Write-Host "  로그 보기: Get-Content -Wait $MtxLog"
+Write-Host "  테스트 송출: .\scripts\test-publish.ps1 -ChannelId <채널 ID> -StreamKey <송출 키>"
+Write-Host "http://127.0.0.1:$Port 에서 앱을 띄웁니다." -ForegroundColor Green
 
 $DxArgs = @('serve', '--package', 'web', '--port', $Port)
 if ($NoBrowser) {
     $DxArgs += @('--open', 'false')
 }
 
+$DxExitCode = 1
 Push-Location $RepoRoot
 try {
     & dx @DxArgs
@@ -88,5 +183,8 @@ try {
 }
 finally {
     Pop-Location
+    if (-not $Mtx.HasExited) {
+        Stop-Process -Id $Mtx.Id -Force
+    }
 }
 exit $DxExitCode

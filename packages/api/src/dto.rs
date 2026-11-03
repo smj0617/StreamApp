@@ -9,3 +9,11 @@ pub struct User {
     /// 입력한 그대로의 닉네임
     pub nickname: String,
 }
+
+/// 내 채널 설정: 스트리머가 자기 채널로 송출할 때 필요한 값.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct MyChannelSettings {
+    pub channel_id: String,
+    /// 송출 키 (StreamKey). 채널 주인만 알아야 하는 비밀 값
+    pub stream_key: String,
+}

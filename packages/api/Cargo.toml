@@ -13,6 +13,9 @@ rand = { version = "0.9", optional = true }
 thiserror = { version = "2", optional = true }
 anyhow = { version = "1", optional = true }
 tracing = { version = "0.1", optional = true }
+# MediaMTX 연동 엔드포인트(`mediamtx` 모듈). dioxus가 쓰는 axum 0.8과 같은 크레이트로 합쳐진다.
+axum = { version = "0.8", optional = true }
+form_urlencoded = { version = "1", optional = true }
 
 [features]
 # 이름을 바꾸면 안 된다: 서버 함수 매크로가 `feature = "server"`를 전제로 코드를 만든다.
@@ -23,13 +26,22 @@ server = [
     "dep:thiserror",
     "dep:anyhow",
     "dep:tracing",
+    "dep:axum",
+    "dep:form_urlencoded",
 ]
 
 [dev-dependencies]
 tokio = { version = "1.48", features = ["macros", "rt"] }
+tower = { version = "0.5", features = ["util"] }
+serde_json = "1"
 
 # `server` feature 없이 `cargo test -p api`를 돌리면 건너뛴다.
 [[test]]
 name = "service"
 path = "tests/service.rs"
+required-features = ["server"]
+
+[[test]]
+name = "mediamtx_http"
+path = "tests/mediamtx_http.rs"
 required-features = ["server"]

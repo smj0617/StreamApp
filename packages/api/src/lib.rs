@@ -9,12 +9,15 @@
 //! - `server` feature 전용
 //!   - [`service`]: Dioxus·HTTP·쿠키를 모르는 앱 서비스. 규칙과 DB를 다루며 주 테스트 경계다.
 //!   - [`server`]: 앱 시작(DB 연결·마이그레이션·기본 데이터)과 서버 함수 어댑터가 함께 쓰는 코드.
+//!   - [`mediamtx`]: MediaMTX가 부르는 내부 HTTP 엔드포인트(Dioxus 없는 axum 라우터). 보조 테스트 경계다.
 
 pub mod dto;
 
 mod users;
 pub use users::*;
 
+#[cfg(feature = "server")]
+pub mod mediamtx;
 #[cfg(feature = "server")]
 pub mod server;
 #[cfg(feature = "server")]

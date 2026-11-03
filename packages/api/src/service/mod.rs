@@ -6,8 +6,10 @@
 //!
 //! 테스트는 [`db::connect_memory`]로 만든 새 메모리 DB 위에서 공개된 동작만 확인한다.
 
+mod channels;
 pub mod db;
 mod ids;
+mod publish;
 mod users;
 
 use sqlx::SqlitePool;

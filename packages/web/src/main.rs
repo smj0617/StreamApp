@@ -27,7 +27,9 @@ fn main() {
     #[cfg(feature = "server")]
     dioxus::serve(|| async move {
         let service = api::server::init_from_env().await?;
-        Ok(dioxus::server::router(App).layer(dioxus::server::axum::Extension(service)))
+        Ok(dioxus::server::router(App)
+            .merge(api::mediamtx::router(service.clone()))
+            .layer(dioxus::server::axum::Extension(service)))
     });
 }
 

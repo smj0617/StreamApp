@@ -37,12 +37,16 @@ name = "api"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "dioxus",
+ "form_urlencoded",
  "rand 0.9.5",
  "serde",
+ "serde_json",
  "sqlx",
  "thiserror 2.0.21",
  "tokio",
+ "tower",
  "tracing",
 ]
 
