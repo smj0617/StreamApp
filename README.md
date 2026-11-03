@@ -31,7 +31,6 @@
 
 - [#13](https://github.com/smj0617/StreamApp/issues/13) 리팩터링: 데이터 뭉치 묶기, 채널 ID·송출 키 전용 타입
 - 첫 반복에서 범위 밖으로 둔 것: 다시보기(VOD), 클립, 치즈(후원), 구독, 팔로우, 검색, 카테고리, 시청자 수, 썸네일, 화질 선택, 송출 키 재발급, 끊긴 송출을 같은 라이브로 잇는 유예 시간, 홈 목록 실시간 갱신, 채팅 기록·도배 방지, 인증
-- 레포에 CI가 아직 없다.
 
 ## 구조
 
@@ -66,6 +65,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 -Port 8090
 - 환경 변수: `STREAMAPP_DB`(DB 경로), `STREAMAPP_MEDIAMTX_API`(Control API 주소, 기본 `http://127.0.0.1:9997`).
 
 ## 테스트
+
+PR과 `main` 푸시마다 GitHub Actions([.github/workflows/ci.yml](.github/workflows/ci.yml))가 아래 네 가지를 돌린다. Rust 버전은 [rust-toolchain.toml](rust-toolchain.toml)로 로컬과 CI가 같게 고정한다.
 
 ```powershell
 cargo test --workspace --features api/server,web/server
