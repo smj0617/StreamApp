@@ -15,6 +15,7 @@ logLevel: info
 # MediaMTX는 동작마다 authHTTPAddress로 JSON(action, path, query 등)을 POST하고, 2xx면 허용한다.
 authMethod: http
 # localhost 대신 127.0.0.1: dx serve는 127.0.0.1에만 바인드하고, Windows에서 localhost는 ::1로 먼저 풀릴 수 있다.
+# 경로는 Rust 상수 api::mediamtx::AUTH_PATH와 같아야 한다.
 authHTTPAddress: http://127.0.0.1:8080/internal/mediamtx/auth
 authHTTPExclude:
   # 필수: 앱이 시작할 때 부르는 Control API 요청이 다시 앱의 인증으로 돌아오지 않게 한다.
@@ -29,6 +30,7 @@ authHTTPExclude:
 ###############################################
 # Control API: 앱이 지금 송출 중인 경로를 조회한다.
 api: true
+# 포트는 Rust 상수 api::server::mediamtx_api::DEFAULT_ADDRESS와 같아야 한다.
 apiAddress: :9997
 
 ###############################################
@@ -39,6 +41,7 @@ rtmpAddress: :1935
 ###############################################
 # HLS: 브라우저 재생. 주소는 http://localhost:8888/<채널ID>/index.m3u8
 hls: true
+# 포트는 Rust 상수 api::mediamtx::HLS_BASE_URL(시청 페이지가 쓰는 재생 주소의 앞부분)과 같아야 한다.
 hlsAddress: :8888
 # 앱의 출처. localhost와 127.0.0.1은 서로 다른 출처라 둘 다 적는다.
 hlsAllowOrigins: ['http://localhost:8080', 'http://127.0.0.1:8080']
@@ -60,6 +63,7 @@ moq: false
 #   $MTX_PATH(경로 이름 = 채널 ID)는 MediaMTX가 직접 바꿔 넣는다. 본문 없이 POST한다.
 # - 앱 주소는 dev.ps1이 앱 포트에 맞춰 MTX_PATHDEFAULTS_RUNONAVAILABLE, MTX_PATHDEFAULTS_RUNONUNAVAILABLE로 덮어쓴다.
 # - 훅 호출이 실패해도(앱이 다시 빌드되는 중 등) MediaMTX는 다시 시도하지 않는다.
+# - 경로는 Rust 상수 api::mediamtx::AVAILABLE_HOOK_PATH, api::mediamtx::UNAVAILABLE_HOOK_PATH와 같아야 한다.
 pathDefaults:
   runOnAvailable: curl.exe -s -X POST http://127.0.0.1:8080/internal/mediamtx/hooks/available?path=$MTX_PATH
   runOnAvailableRestart: false

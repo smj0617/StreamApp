@@ -141,10 +141,13 @@ Remove-Item -Force -ErrorAction SilentlyContinue $MtxLog
 
 # 송출 시작·종료 훅 명령. MediaMTX가 셸 없이 실행하므로 curl.exe를 이름으로 부른다.
 # $MTX_PATH(채널 ID)는 MediaMTX가 실행할 때 바꿔 넣으므로 작은따옴표로 글자 그대로 넘긴다.
+# 아래 훅 경로(.../hooks/available, .../hooks/unavailable)는 Rust 상수 api::mediamtx::AVAILABLE_HOOK_PATH,
+# api::mediamtx::UNAVAILABLE_HOOK_PATH와 같아야 한다.
 $HookCommand = "curl.exe -s -X POST http://127.0.0.1:$Port/internal/mediamtx/hooks"
 
 # 설정 파일의 값을 환경 변수(MTX_<대문자 키>)로 덮어쓴다: 앱 포트에 맞춘 주소와 로그 파일.
-# MediaMTX 프로세스에만 넘기고 바로 되돌린다.
+# MediaMTX 프로세스에만 넘기고 바로 되돌린다. 인증 경로(/internal/mediamtx/auth)는 Rust 상수
+# api::mediamtx::AUTH_PATH와 같아야 한다.
 $MtxEnv = @{
     MTX_AUTHHTTPADDRESS               = "http://127.0.0.1:$Port/internal/mediamtx/auth"
     MTX_HLSALLOWORIGINS               = "http://localhost:$Port,http://127.0.0.1:$Port"
@@ -174,6 +177,8 @@ if ($Mtx.HasExited) {
     Get-Content -ErrorAction SilentlyContinue -Tail 20 $MtxLog
     exit 1
 }
+# 포트는 mediamtx.yml의 값이다. HLS 8888은 Rust 상수 api::mediamtx::HLS_BASE_URL(시청 페이지의 재생 주소)과,
+# Control API 9997은 api::server::mediamtx_api::DEFAULT_ADDRESS와 같아야 한다.
 Write-Host "MediaMTX $MtxVersion 실행 중(RTMP 1935, HLS 8888, Control API 9997). 로그: $MtxLog" -ForegroundColor Green
 Write-Host "  로그 보기: Get-Content -Wait $MtxLog"
 Write-Host "  테스트 송출: .\scripts\test-publish.ps1 -ChannelId <채널 ID> -StreamKey <송출 키>"
@@ -185,7 +190,8 @@ if ($NoBrowser) {
 }
 
 # 앱은 시작할 때(다시 빌드되어 재시작할 때 포함) 이 주소의 MediaMTX Control API로 지금 송출 중인 채널을
-# 조회해 라이브를 맞춘다. 위에서 띄운 MediaMTX의 apiAddress(:9997)와 같아야 한다. dx serve와 앱에만 넘기고 되돌린다.
+# 조회해 라이브를 맞춘다. 위에서 띄운 MediaMTX의 apiAddress(:9997)와 같아야 한다(앱의 기본값은 Rust 상수
+# api::server::mediamtx_api::DEFAULT_ADDRESS). dx serve와 앱에만 넘기고 되돌린다.
 $SavedMtxApiAddress = $env:STREAMAPP_MEDIAMTX_API
 $env:STREAMAPP_MEDIAMTX_API = 'http://127.0.0.1:9997'
 

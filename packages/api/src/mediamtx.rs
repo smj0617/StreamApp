@@ -5,6 +5,9 @@
 //!
 //! 경로는 서버 함수(`/api/..`)와 겹치지 않게 `/internal/mediamtx/..` 아래에 둔다.
 //! 이 라우터에는 fallback을 두지 않는다(Dioxus 라우터의 SSR fallback과 합칠 수 없다).
+//!
+//! MediaMTX 설정(`tools/mediamtx/mediamtx.yml`, `scripts/dev.ps1`)과 맞춰야 하는 HLS 주소와 앱 경로는
+//! Rust 쪽에서는 아래 상수가 유일한 출처다. 설정 파일의 같은 값 옆에는 이 상수 이름을 적어 둔다.
 
 use axum::{
     extract::{Query, State},
@@ -19,9 +22,15 @@ use crate::service::{AppService, ServiceError};
 /// `authMethod: http` 인증 요청을 받는 경로. `tools/mediamtx/mediamtx.yml`의 `authHTTPAddress`와 같아야 한다.
 pub const AUTH_PATH: &str = "/internal/mediamtx/auth";
 /// 경로가 준비되면(송출 시작) `runOnAvailable` 훅이 `?path=<채널ID>`를 붙여 POST하는 경로.
+/// `mediamtx.yml`의 `runOnAvailable`과 `dev.ps1`의 훅 명령에 같은 경로가 있다.
 pub const AVAILABLE_HOOK_PATH: &str = "/internal/mediamtx/hooks/available";
 /// 경로의 준비가 끝나면(송출 종료) `runOnUnavailable` 훅이 `?path=<채널ID>`를 붙여 POST하는 경로.
+/// `mediamtx.yml`의 `runOnUnavailable`과 `dev.ps1`의 훅 명령에 같은 경로가 있다.
 pub const UNAVAILABLE_HOOK_PATH: &str = "/internal/mediamtx/hooks/unavailable";
+/// 시청자 브라우저가 영상을 받아 갈 MediaMTX HLS 주소의 앞부분. 재생 주소는
+/// `<HLS_BASE_URL>/<채널ID>/index.m3u8`이다(경로 이름이 채널 ID). 시청자는 앱과 같은 PC의 MediaMTX에서
+/// 재생한다. 포트는 `mediamtx.yml`의 `hlsAddress`(`:8888`)와 같아야 한다.
+pub const HLS_BASE_URL: &str = "http://localhost:8888";
 
 /// MediaMTX 연동 라우터.
 pub fn router(service: AppService) -> Router {

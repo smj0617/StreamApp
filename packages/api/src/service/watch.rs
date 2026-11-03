@@ -2,10 +2,7 @@
 
 use super::{AppService, ServiceError};
 use crate::dto::{OpenLive, WatchPage};
-
-/// 브라우저가 영상을 받아 갈 MediaMTX HLS 주소의 앞부분. 경로 이름이 채널 ID다.
-/// 시청자는 앱과 같은 PC의 MediaMTX(HLS 8888)에서 재생한다.
-const HLS_BASE_URL: &str = "http://localhost:8888";
+use crate::mediamtx::HLS_BASE_URL;
 
 #[derive(sqlx::FromRow)]
 struct WatchPageRow {

@@ -52,7 +52,8 @@ pub struct LiveChannel {
 pub struct WatchPage {
     pub channel_id: String,
     pub channel_name: String,
-    /// 영상을 재생할 HLS 주소: `http://localhost:8888/<채널ID>/index.m3u8`
+    /// 영상을 재생할 HLS 주소: `<HLS 기본 주소>/<채널ID>/index.m3u8`. HLS 기본 주소는 서버의
+    /// `api::mediamtx::HLS_BASE_URL`이다.
     pub playback_url: String,
     /// 지금 열린 라이브. 라이브 중이 아니면(오프라인) `None`
     pub live: Option<OpenLive>,
