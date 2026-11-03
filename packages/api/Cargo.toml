@@ -45,3 +45,8 @@ required-features = ["server"]
 name = "mediamtx_http"
 path = "tests/mediamtx_http.rs"
 required-features = ["server"]
+
+[[test]]
+name = "watch_page"
+path = "tests/watch_page.rs"
+required-features = ["server"]

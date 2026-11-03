@@ -2,6 +2,7 @@ use api::dto::LiveChannel;
 use dioxus::prelude::*;
 
 use super::shell::rejection_reason;
+use crate::Route;
 
 /// 홈: 라이브 중인 채널의 카드 목록(최근에 시작한 순서). 새로고침해야 갱신된다.
 #[component]
@@ -45,7 +46,7 @@ pub fn Home() -> Element {
     }
 }
 
-/// 라이브 카드: 채널 이름, 라이브 제목, 시작 후 경과 시간. 썸네일은 없다.
+/// 라이브 카드: 채널 이름, 라이브 제목, 시작 후 경과 시간. 썸네일은 없다. 누르면 시청 페이지로 간다.
 ///
 /// 경과 시간은 서버가 목록과 함께 준 현재 시각으로 계산한다. 웹(wasm)에서는 `SystemTime::now()`가
 /// panic하고, 서버 렌더링 결과와 하이드레이션 결과가 같아야 하기 때문이다.
@@ -53,13 +54,19 @@ pub fn Home() -> Element {
 fn LiveCard(live: LiveChannel, server_now_ms: i64) -> Element {
     let elapsed = elapsed_text(server_now_ms - live.started_at_ms);
     rsx! {
-        article { class: "live-card",
-            p { class: "live-card-top",
-                span { class: "live-badge", "LIVE" }
-                span { class: "live-elapsed", "{elapsed}" }
+        Link {
+            class: "live-card-link",
+            to: Route::Watch {
+                channel_id: live.channel_id.clone(),
+            },
+            article { class: "live-card",
+                p { class: "live-card-top",
+                    span { class: "live-badge", "LIVE" }
+                    span { class: "live-elapsed", "{elapsed}" }
+                }
+                h2 { class: "live-title", "{live.title}" }
+                p { class: "live-channel", "{live.channel_name}" }
             }
-            h2 { class: "live-title", "{live.title}" }
-            p { class: "live-channel", "{live.channel_name}" }
         }
     }
 }

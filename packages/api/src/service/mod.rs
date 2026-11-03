@@ -12,6 +12,7 @@ mod ids;
 mod lives;
 mod publish;
 mod users;
+mod watch;
 
 use std::sync::Arc;
 

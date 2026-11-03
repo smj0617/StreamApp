@@ -16,9 +16,11 @@ pub mod dto;
 mod channels;
 mod lives;
 mod users;
+mod watch;
 pub use channels::*;
 pub use lives::*;
 pub use users::*;
+pub use watch::*;
 
 #[cfg(feature = "server")]
 pub mod mediamtx;

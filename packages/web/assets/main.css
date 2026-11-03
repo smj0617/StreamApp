@@ -262,3 +262,73 @@ body {
   color: var(--accent);
   font-weight: 600;
 }
+
+/* 카드 전체가 시청 페이지 링크다. */
+.live-card-link {
+  display: block;
+  height: 100%;
+  color: inherit;
+  text-decoration: none;
+}
+
+.live-card-link:hover .live-card,
+.live-card-link:focus-visible .live-card {
+  border-color: var(--accent);
+}
+
+/* ---- 시청 페이지 ---- */
+
+.watch {
+  max-width: 1100px;
+}
+
+.watch-player,
+.watch-offline {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: #000;
+}
+
+.watch-offline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.offline-badge {
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: #3a3b40;
+  color: #fff;
+  font-weight: 700;
+}
+
+.watch-info {
+  margin: 12px 0;
+}
+
+.watch-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 1.2rem;
+  overflow-wrap: anywhere;
+}
+
+.watch-title .live-badge {
+  font-size: 0.75rem;
+}
+
+.watch-channel {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.watch-info .muted {
+  margin: 0;
+}

@@ -44,6 +44,25 @@ pub struct LiveChannel {
     pub started_at_ms: i64,
 }
 
+/// 시청 페이지 정보: 채널 하나와, 그 채널에서 지금 열린 라이브(있으면).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct WatchPage {
+    pub channel_id: String,
+    pub channel_name: String,
+    /// 영상을 재생할 HLS 주소: `http://localhost:8888/<채널ID>/index.m3u8`
+    pub playback_url: String,
+    /// 지금 열린 라이브. 라이브 중이 아니면(오프라인) `None`
+    pub live: Option<OpenLive>,
+}
+
+/// 채널에서 지금 열려 있는(송출 중인) 라이브.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct OpenLive {
+    pub title: String,
+    /// 라이브가 열린 시각(유닉스 밀리초)
+    pub started_at_ms: i64,
+}
+
 /// 홈의 라이브 중인 채널 목록과, 목록을 만든 서버의 현재 시각.
 ///
 /// 경과 시간은 `server_now_ms - started_at_ms`로 계산한다. 웹(wasm)에서는
