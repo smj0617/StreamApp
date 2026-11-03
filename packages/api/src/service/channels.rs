@@ -2,12 +2,10 @@
 
 use super::{AppService, ServiceError};
 use crate::dto::MyChannelSettings;
+use crate::rules::MAX_TITLE_CHARS;
 
 /// OBS "서버" 칸에 넣을 값. 스트리머는 앱과 같은 PC의 MediaMTX(RTMP 1935)로 송출한다.
 const OBS_SERVER: &str = "rtmp://localhost/";
-
-/// 제목 규칙: 다음 라이브 제목과 라이브 제목 모두 최대 100자(홈 카드가 깨지지 않게).
-const MAX_TITLE_CHARS: usize = 100;
 
 #[derive(sqlx::FromRow)]
 struct ChannelSettingsRow {
@@ -66,7 +64,7 @@ impl AppService {
     }
 }
 
-/// 제목 규칙: 앞뒤 공백을 지운 뒤 최대 100자. 비어 있으면 `None`(제목 없음).
+/// 제목 규칙: 앞뒤 공백을 지운 뒤 최대 [`MAX_TITLE_CHARS`]자. 비어 있으면 `None`(제목 없음).
 /// 다음 라이브 제목과 진행 중인 라이브 제목([`super::lives`])이 함께 쓴다.
 pub(super) fn valid_title(input: &str) -> Result<Option<&str>, ServiceError> {
     let title = input.trim();

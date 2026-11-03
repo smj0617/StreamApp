@@ -69,7 +69,7 @@ pub enum ServiceError {
     #[error("없는 사용자입니다")]
     UnknownUser,
     /// 다음 라이브 제목과 라이브 제목에 함께 쓴다.
-    #[error("제목은 100자를 넘을 수 없습니다")]
+    #[error("제목은 {max}자를 넘을 수 없습니다", max = crate::rules::MAX_TITLE_CHARS)]
     TitleTooLong,
     #[error("없는 채널입니다")]
     UnknownChannel,
@@ -77,7 +77,7 @@ pub enum ServiceError {
     NotLive,
     #[error("메시지 내용을 입력해 주세요")]
     ChatMessageEmpty,
-    #[error("채팅 메시지는 200자를 넘을 수 없습니다")]
+    #[error("채팅 메시지는 {max}자를 넘을 수 없습니다", max = crate::rules::MAX_CHAT_CHARS)]
     ChatMessageTooLong,
 }
 

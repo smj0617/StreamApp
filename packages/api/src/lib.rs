@@ -3,6 +3,7 @@
 //! 계층은 셋이다.
 //!
 //! - [`dto`]: 웹과 서버가 함께 쓰는 데이터 타입. serde만 쓴다.
+//! - [`rules`]: 웹과 서버가 함께 쓰는 규칙 값(제목·채팅 글자 수, 자동 제목).
 //! - 서버 함수(예: [`list_users`]): 도메인별 모듈(`users` 등)에 둔다. 채팅 WebSocket([`connect_chat`])도
 //!   서버 함수다. 요청을
 //!   [`service::AppService`] 호출로 바꾸기만 하는 얇은 어댑터다. 함수 몸체는 서버 빌드에서만
@@ -13,6 +14,7 @@
 //!   - [`mediamtx`]: MediaMTX가 부르는 내부 HTTP 엔드포인트(Dioxus 없는 axum 라우터). 보조 테스트 경계다.
 
 pub mod dto;
+pub mod rules;
 
 mod channels;
 mod chat;

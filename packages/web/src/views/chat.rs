@@ -1,12 +1,11 @@
 use api::dto::ChatMessage;
+// 채팅 메시지 최대 글자 수는 서버와 같은 값을 쓴다. 서버도 같은 규칙으로 거절한다.
+use api::rules::MAX_CHAT_CHARS;
 use api::{ChatClientEvent, ChatServerEvent};
 use dioxus::fullstack::{use_websocket, WebSocketOptions, WebsocketError};
 use dioxus::prelude::*;
 
 use super::shell::CurrentUser;
-
-/// 채팅 메시지 최대 글자 수(앞뒤 공백을 지운 뒤). 서버도 같은 규칙으로 거절한다.
-const MAX_CHAT_CHARS: usize = 200;
 
 /// 메시지 목록 요소의 id. 새 메시지가 오면 맨 아래로 내린다.
 const MESSAGES_ID: &str = "chat-messages";

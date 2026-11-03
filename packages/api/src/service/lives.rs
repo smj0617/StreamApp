@@ -6,9 +6,7 @@
 use super::channels::valid_title;
 use super::{AppService, ServiceError};
 use crate::dto::LiveChannel;
-
-/// 자동 제목(Fallback Title): 다음 라이브 제목이 비어 있을 때 채널 이름 뒤에 붙여 라이브 제목으로 쓴다.
-const FALLBACK_TITLE_SUFFIX: &str = "님의 라이브";
+use crate::rules::fallback_title;
 
 #[derive(sqlx::FromRow)]
 struct LiveChannelRow {
@@ -40,20 +38,23 @@ impl AppService {
         // 읽기보다 쓰기를 먼저 해서 트랜잭션이 처음부터 쓰기 잠금을 잡게 한다
         // (읽기로 시작한 트랜잭션이 나중에 쓰기로 올라가면 동시 요청과 SQLITE_BUSY가 날 수 있다).
         close_open_live(&mut tx, channel_id, now).await?;
-        // 다음 라이브 제목은 비어 있으면 NULL로 저장된다(빈 문자열은 저장되지 않는다).
-        let opened = sqlx::query(
-            "INSERT INTO lives (channel_id, title, started_at_ms)
-             SELECT id, COALESCE(next_live_title, name || ?), ?
-             FROM channels WHERE id = ?",
+        let channel = sqlx::query_as::<_, (String, Option<String>)>(
+            "SELECT name, next_live_title FROM channels WHERE id = ?",
         )
-        .bind(FALLBACK_TITLE_SUFFIX)
-        .bind(now)
         .bind(channel_id)
-        .execute(&mut *tx)
+        .fetch_optional(&mut *tx)
         .await?;
-        if opened.rows_affected() == 0 {
+        let Some((channel_name, next_live_title)) = channel else {
             return Err(ServiceError::UnknownChannel);
-        }
+        };
+        // 다음 라이브 제목은 비어 있으면 NULL로 저장된다(빈 문자열은 저장되지 않는다).
+        let title = next_live_title.unwrap_or_else(|| fallback_title(&channel_name));
+        sqlx::query("INSERT INTO lives (channel_id, title, started_at_ms) VALUES (?, ?, ?)")
+            .bind(channel_id)
+            .bind(title)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
         tx.commit().await?;
         Ok(())
     }
@@ -104,32 +105,27 @@ impl AppService {
         title: &str,
     ) -> Result<String, ServiceError> {
         let title = valid_title(title)?;
-        let saved = sqlx::query_scalar::<_, String>(
-            "UPDATE lives
-             SET title = COALESCE(?, (SELECT name || ? FROM channels WHERE id = lives.channel_id))
-             WHERE ended_at_ms IS NULL AND channel_id = (SELECT id FROM channels WHERE user_id = ?)
-             RETURNING title",
+        let channel = sqlx::query_as::<_, (String, String)>(
+            "SELECT id, name FROM channels WHERE user_id = ?",
         )
-        .bind(title)
-        .bind(FALLBACK_TITLE_SUFFIX)
         .bind(user_id)
         .fetch_optional(&self.pool)
         .await?;
-        if let Some(saved) = saved {
-            return Ok(saved);
-        }
         // 사용자와 채널은 1:1이므로, 채널이 없으면 그런 사용자가 없다.
-        let user_exists = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS (SELECT 1 FROM channels WHERE user_id = ?)",
-        )
-        .bind(user_id)
-        .fetch_one(&self.pool)
-        .await?;
-        Err(if user_exists {
-            ServiceError::NotLive
-        } else {
-            ServiceError::UnknownUser
-        })
+        let Some((channel_id, channel_name)) = channel else {
+            return Err(ServiceError::UnknownUser);
+        };
+        let title = title.map_or_else(|| fallback_title(&channel_name), str::to_owned);
+        let updated =
+            sqlx::query("UPDATE lives SET title = ? WHERE channel_id = ? AND ended_at_ms IS NULL")
+                .bind(&title)
+                .bind(&channel_id)
+                .execute(&self.pool)
+                .await?;
+        if updated.rows_affected() == 0 {
+            return Err(ServiceError::NotLive);
+        }
+        Ok(title)
     }
 }
 

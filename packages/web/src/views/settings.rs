@@ -1,10 +1,9 @@
 use api::dto::MyChannelSettings;
+// 제목 규칙은 서버와 같은 값을 쓴다. 화면에서는 글자 수만 보여 주고 거절은 서버가 한다.
+use api::rules::{fallback_title, MAX_TITLE_CHARS};
 use dioxus::prelude::*;
 
 use super::shell::{rejection_reason, CurrentUser};
-
-/// 제목 규칙(서버와 같은 값). 화면에서는 글자 수만 보여 주고 거절은 서버가 한다.
-const MAX_TITLE_CHARS: usize = 100;
 
 /// 내 채널 설정: OBS에 넣을 값을 복사하고 다음 라이브 제목을 적어 둔다.
 /// 라이브 중이면 진행 중인 라이브의 제목도 바꿀 수 있다.
@@ -176,12 +175,13 @@ impl TitleKind {
     }
 
     fn description(self, nickname: &str) -> String {
+        let fallback = fallback_title(nickname);
         match self {
             TitleKind::NextLive => format!(
-                "송출을 시작하면 이 제목이 라이브 제목이 됩니다. 비워 두면 자동 제목 \"{nickname}님의 라이브\"가 붙습니다."
+                "송출을 시작하면 이 제목이 라이브 제목이 됩니다. 비워 두면 자동 제목 \"{fallback}\"가 붙습니다."
             ),
             TitleKind::Live => format!(
-                "지금 라이브 중입니다. 바꾼 제목은 홈과 시청 페이지에 반영됩니다(이미 열려 있는 페이지는 새로고침하면 보입니다). 비우면 자동 제목 \"{nickname}님의 라이브\"가 됩니다."
+                "지금 라이브 중입니다. 바꾼 제목은 홈과 시청 페이지에 반영됩니다(이미 열려 있는 페이지는 새로고침하면 보입니다). 비우면 자동 제목 \"{fallback}\"가 됩니다."
             ),
         }
     }
@@ -224,6 +224,7 @@ fn TitleEditor(kind: TitleKind, saved: String, nickname: String) -> Element {
 
     let heading = kind.heading();
     let description = kind.description(&nickname);
+    let placeholder = fallback_title(&nickname);
     let card_class = match kind {
         TitleKind::NextLive => "settings-card",
         TitleKind::Live => "settings-card live-title-card",
@@ -243,7 +244,7 @@ fn TitleEditor(kind: TitleKind, saved: String, nickname: String) -> Element {
                 input {
                     class: "title-input",
                     aria_label: "{heading}",
-                    placeholder: "{nickname}님의 라이브",
+                    placeholder,
                     value: "{title}",
                     oninput: move |event| {
                         title.set(event.value());

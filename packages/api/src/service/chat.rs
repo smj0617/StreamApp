@@ -10,12 +10,10 @@ use tokio::sync::broadcast;
 
 use super::{AppService, ServiceError};
 use crate::dto::ChatMessage;
+use crate::rules::MAX_CHAT_CHARS;
 
 /// 채널 하나의 broadcast가 담아 두는 이벤트 수. 이보다 뒤처진 참여자는 밀린 메시지를 건너뛴다.
 const CHANNEL_CAPACITY: usize = 256;
-
-/// 채팅 메시지 최대 글자 수(앞뒤 공백을 지운 뒤).
-const MAX_CHAT_CHARS: usize = 200;
 
 /// 채팅 참여자가 받는 이벤트.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -118,7 +116,7 @@ impl AppService {
     /// 채팅 보내기: 그 채널의 참여자 모두에게 보낸 사람의 닉네임, 내용(앞뒤 공백을 지운 것), 시각을
     /// 보내고, 보낸 메시지를 돌려준다.
     ///
-    /// 내용이 규칙(앞뒤 공백을 지운 뒤 1~200자)을 어기면 [`ServiceError::ChatMessageEmpty`]나
+    /// 내용이 규칙(앞뒤 공백을 지운 뒤 1~[`MAX_CHAT_CHARS`]자)을 어기면 [`ServiceError::ChatMessageEmpty`]나
     /// [`ServiceError::ChatMessageTooLong`], 없는 사용자면 [`ServiceError::UnknownUser`],
     /// 그 채널이 라이브 중이 아니면 [`ServiceError::NotLive`].
     pub async fn send_chat(
@@ -146,7 +144,7 @@ impl AppService {
     }
 }
 
-/// 채팅 메시지 내용 규칙: 앞뒤 공백을 지운 뒤 1~200자. 통과하면 공백을 지운 내용을 돌려준다.
+/// 채팅 메시지 내용 규칙: 앞뒤 공백을 지운 뒤 1~[`MAX_CHAT_CHARS`]자. 통과하면 공백을 지운 내용을 돌려준다.
 fn valid_chat_content(input: &str) -> Result<&str, ServiceError> {
     let content = input.trim();
     if content.is_empty() {
