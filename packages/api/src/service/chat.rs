@@ -78,7 +78,11 @@ impl ChatHub {
     /// 그 채널의 참여자 모두에게 라이브 종료를 알리고 broadcast를 치운다. 참여자의 구독은 알림을
     /// 받은 뒤 끝나고, 같은 채널의 다음 라이브는 새 broadcast를 쓴다.
     pub(super) fn end_live(&self, channel_id: &str) {
-        let removed = self.chats.lock().expect("채팅 허브 잠금").remove(channel_id);
+        let removed = self
+            .chats
+            .lock()
+            .expect("채팅 허브 잠금")
+            .remove(channel_id);
         if let Some(sender) = removed {
             let _ = sender.send(ChatEvent::LiveEnded);
         }
