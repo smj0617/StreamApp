@@ -9,20 +9,37 @@
 mod channels;
 pub mod db;
 mod ids;
+mod lives;
 mod publish;
 mod users;
 
+use std::sync::Arc;
+
 use sqlx::SqlitePool;
+
+/// 현재 시각(유닉스 밀리초)을 돌려주는 시계.
+pub type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
 
 #[derive(Clone)]
 pub struct AppService {
     pool: SqlitePool,
+    clock: Clock,
 }
 
 impl AppService {
     /// 마이그레이션이 적용된 풀로 서비스를 만든다([`db::connect_file`], [`db::connect_memory`]).
     pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+        Self::with_clock(pool, Arc::new(now_ms))
+    }
+
+    /// 시계를 바꿔 끼운 서비스. 테스트가 라이브 시작·종료 시각을 정할 때 쓴다.
+    pub fn with_clock(pool: SqlitePool, clock: Clock) -> Self {
+        Self { pool, clock }
+    }
+
+    /// 이 서비스 시계의 현재 시각(유닉스 밀리초). 라이브 시각과 같은 기준이다.
+    pub fn now_ms(&self) -> i64 {
+        (self.clock)()
     }
 }
 
@@ -40,6 +57,8 @@ pub enum ServiceError {
     DuplicateNickname,
     #[error("없는 사용자입니다")]
     UnknownUser,
+    #[error("없는 채널입니다")]
+    UnknownChannel,
 }
 
 fn now_ms() -> i64 {

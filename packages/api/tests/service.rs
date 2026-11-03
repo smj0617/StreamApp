@@ -1,6 +1,11 @@
 //! 경계 A: 앱 서비스. 테스트마다 새 메모리 SQLite를 쓰고, 서비스의 공개 동작으로만 확인한다.
 
-use api::dto::MyChannelSettings;
+use std::sync::{
+    atomic::{AtomicI64, Ordering},
+    Arc,
+};
+
+use api::dto::{LiveChannel, MyChannelSettings};
 use api::service::{db, AppService, ServiceError};
 
 async fn service() -> AppService {
@@ -280,4 +285,161 @@ async fn unknown_user_has_no_channel_settings() {
     let settings = svc.my_channel_settings(9999).await.unwrap();
 
     assert_eq!(settings, None);
+}
+
+// ---- 라이브: 송출 시작·종료 반영과 라이브 중인 채널 목록 ----
+
+/// 테스트가 움직이는 시계. 처음에는 0(유닉스 밀리초)이다.
+#[derive(Clone, Default)]
+struct FakeClock(Arc<AtomicI64>);
+
+impl FakeClock {
+    fn set(&self, now_ms: i64) {
+        self.0.store(now_ms, Ordering::SeqCst);
+    }
+}
+
+/// 가짜 시계를 쓰는 서비스와 기본 사용자(철수·영희·민수)의 채널 ID.
+async fn service_with_clock() -> (AppService, FakeClock, [String; 3]) {
+    let clock = FakeClock::default();
+    let time = clock.0.clone();
+    let svc = AppService::with_clock(
+        db::connect_memory().await.expect("메모리 DB 연결"),
+        Arc::new(move || time.load(Ordering::SeqCst)),
+    );
+    let ids: Vec<String> = seeded_channels(&svc)
+        .await
+        .into_iter()
+        .map(|c| c.channel_id)
+        .collect();
+    (svc, clock, ids.try_into().expect("기본 사용자는 3명"))
+}
+
+fn live(channel_id: &str, channel_name: &str, title: &str, started_at_ms: i64) -> LiveChannel {
+    LiveChannel {
+        channel_id: channel_id.to_string(),
+        channel_name: channel_name.to_string(),
+        title: title.to_string(),
+        started_at_ms,
+    }
+}
+
+#[tokio::test]
+async fn publish_started_opens_live_titled_after_channel_name() {
+    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    clock.set(1_000);
+
+    svc.publish_started(&chulsoo).await.unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&chulsoo, "철수", "철수님의 라이브", 1_000)]);
+}
+
+#[tokio::test]
+async fn publish_ended_closes_live() {
+    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    svc.publish_started(&chulsoo).await.unwrap();
+    clock.set(5_000);
+
+    svc.publish_ended(&chulsoo).await.unwrap();
+
+    assert_eq!(svc.live_channels().await.unwrap(), []);
+}
+
+#[tokio::test]
+async fn live_channels_are_listed_most_recently_started_first() {
+    let (svc, clock, [chulsoo, younghee, minsu]) = service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&younghee).await.unwrap();
+    clock.set(2_000);
+    svc.publish_started(&minsu).await.unwrap();
+    clock.set(3_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+
+    assert_eq!(
+        lives,
+        [
+            live(&chulsoo, "철수", "철수님의 라이브", 3_000),
+            live(&minsu, "민수", "민수님의 라이브", 2_000),
+            live(&younghee, "영희", "영희님의 라이브", 1_000),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn publish_ended_closes_only_that_channels_live() {
+    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+    clock.set(2_000);
+    svc.publish_started(&younghee).await.unwrap();
+
+    svc.publish_ended(&chulsoo).await.unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&younghee, "영희", "영희님의 라이브", 2_000)]);
+}
+
+#[tokio::test]
+async fn publish_started_while_live_replaces_open_live_with_new_one() {
+    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+    clock.set(2_000);
+
+    svc.publish_started(&chulsoo).await.unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&chulsoo, "철수", "철수님의 라이브", 2_000)]);
+}
+
+#[tokio::test]
+async fn publishing_again_after_it_ended_starts_new_live() {
+    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+    clock.set(2_000);
+    svc.publish_started(&younghee).await.unwrap();
+    clock.set(3_000);
+    svc.publish_ended(&chulsoo).await.unwrap();
+    // 유예 시간이 없다: 바로 다시 붙어도 새 라이브다.
+
+    svc.publish_started(&chulsoo).await.unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(
+        lives,
+        [
+            live(&chulsoo, "철수", "철수님의 라이브", 3_000),
+            live(&younghee, "영희", "영희님의 라이브", 2_000),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn publish_ended_without_open_live_changes_nothing() {
+    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+
+    svc.publish_ended(&younghee).await.unwrap();
+    svc.publish_ended("nosuchchanne").await.unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&chulsoo, "철수", "철수님의 라이브", 1_000)]);
+}
+
+#[tokio::test]
+async fn publish_started_on_unknown_channel_is_rejected() {
+    let (svc, _clock, _) = service_with_clock().await;
+
+    let result = svc.publish_started("nosuchchanne").await;
+
+    assert!(
+        matches!(result, Err(ServiceError::UnknownChannel)),
+        "{result:?}"
+    );
+    assert_eq!(svc.live_channels().await.unwrap(), []);
 }

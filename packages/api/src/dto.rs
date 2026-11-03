@@ -26,3 +26,26 @@ pub struct MyChannelSettings {
     /// 송출 키 (StreamKey). 채널 주인만 알아야 하는 비밀 값
     pub stream_key: String,
 }
+
+/// 라이브 중인 채널 하나: 홈 카드에 보여 줄 값.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct LiveChannel {
+    pub channel_id: String,
+    pub channel_name: String,
+    /// 지금 열린 라이브의 제목
+    pub title: String,
+    /// 라이브가 열린 시각(유닉스 밀리초)
+    pub started_at_ms: i64,
+}
+
+/// 홈의 라이브 중인 채널 목록과, 목록을 만든 서버의 현재 시각.
+///
+/// 경과 시간은 `server_now_ms - started_at_ms`로 계산한다. 웹(wasm)에서는
+/// `SystemTime::now()`가 panic하고, 서버 렌더링 결과와 하이드레이션 결과도 같아야 하기 때문이다.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct LiveChannelList {
+    /// 최근에 시작한 순서
+    pub channels: Vec<LiveChannel>,
+    /// 서버의 현재 시각(유닉스 밀리초)
+    pub server_now_ms: i64,
+}
