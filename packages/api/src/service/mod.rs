@@ -20,6 +20,7 @@ use std::sync::Arc;
 use sqlx::SqlitePool;
 
 pub use chat::{ChatEvent, ChatSubscription};
+pub use publish::PublishingStatus;
 
 /// 현재 시각(유닉스 밀리초)을 돌려주는 시계.
 pub type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;

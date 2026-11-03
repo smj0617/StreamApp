@@ -21,7 +21,7 @@ use std::path::PathBuf;
 
 use dioxus::prelude::ServerFnError;
 
-use crate::service::{db, AppService, ServiceError};
+use crate::service::{db, AppService, PublishingStatus, ServiceError};
 
 /// DB 파일 경로를 바꾸는 환경변수.
 pub const DB_PATH_ENV: &str = "STREAMAPP_DB";
@@ -49,23 +49,30 @@ pub async fn init_from_env() -> anyhow::Result<AppService> {
 }
 
 /// 앱이 꺼져 있던 동안 놓친 송출 시작·종료 알림을 보정한다: MediaMTX Control API로 지금 송출 중인
-/// 경로를 한 번 조회해 송출 상태 맞추기를 부른다. MediaMTX에 연결할 수 없으면 송출 중인 채널이 없다고
-/// 보고(열린 라이브를 모두 닫는다) 경고를 남긴다.
+/// 경로를 한 번 조회해 송출 상태 맞추기를 부른다. 연결할 수 없으면 송출 중인 채널이 없다고 보고(열린
+/// 라이브를 모두 닫는다), 답을 쓸 수 없으면 라이브를 그대로 둔다.
 async fn reconcile_with_mediamtx(service: &AppService) -> Result<(), ServiceError> {
     let address = mediamtx_api::address_from_env();
-    let publishing = match mediamtx_api::publishing_paths(&address).await {
-        Ok(paths) => paths,
-        Err(e) => {
-            tracing::warn!(
-                "MediaMTX Control API({address})에 연결할 수 없어 송출 중인 채널이 없다고 보고 열린 라이브를 모두 닫습니다: {e}"
+    let status = mediamtx_api::publishing_status(&address).await;
+    match &status {
+        PublishingStatus::Known(paths) => {
+            tracing::info!(
+                "MediaMTX에서 송출 중인 경로 {}개를 확인했습니다",
+                paths.len()
             );
-            Vec::new()
         }
-    };
-    service.reconcile_publishing(&publishing).await?;
+        PublishingStatus::Unreachable => {
+            tracing::warn!("MediaMTX가 꺼져 있다고 보고 열린 라이브를 모두 닫습니다");
+        }
+        PublishingStatus::Unknown => {
+            tracing::warn!(
+                "송출 상태를 알 수 없어 송출 상태 맞추기를 건너뜁니다(라이브는 그대로 둡니다)"
+            );
+        }
+    }
+    service.reconcile_publishing(status).await?;
     tracing::info!(
-        "송출 상태 맞추기 완료: 송출 중인 경로 {}개, 라이브 중인 채널 {}개",
-        publishing.len(),
+        "라이브 중인 채널 {}개로 시작합니다",
         service.live_channels().await?.len()
     );
     Ok(())

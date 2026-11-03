@@ -6,7 +6,7 @@ mod common;
 use std::time::Duration;
 
 use api::dto::ChatMessage;
-use api::service::{ChatEvent, ChatSubscription, ServiceError};
+use api::service::{ChatEvent, ChatSubscription, PublishingStatus, ServiceError};
 use common::{service_with_clock, user};
 
 /// 구독의 다음 이벤트. 오지 않으면 테스트가 멈추지 않게 1초 뒤 실패한다.
@@ -279,7 +279,7 @@ async fn reconciling_that_closes_ghost_live_tells_its_participants_live_ended() 
     let mut younghee_viewer = svc.join_chat(&younghee_channel).await.unwrap();
 
     // 영희만 계속 송출 중이다: 철수의 라이브는 종료 알림을 놓친 유령 라이브다.
-    svc.reconcile_publishing(std::slice::from_ref(&younghee_channel))
+    svc.reconcile_publishing(PublishingStatus::Known(vec![younghee_channel.clone()]))
         .await
         .unwrap();
     svc.send_chat(younghee, &younghee_channel, "저는 계속해요")

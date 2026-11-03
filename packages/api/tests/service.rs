@@ -3,7 +3,7 @@
 mod common;
 
 use api::dto::{LiveChannel, MyChannelSettings};
-use api::service::{AppService, ServiceError};
+use api::service::{AppService, PublishingStatus, ServiceError};
 use common::{service, FakeClock};
 
 fn nicknames(users: &[api::dto::User]) -> Vec<&str> {
@@ -593,7 +593,9 @@ async fn reconciling_with_no_publishing_channels_closes_every_open_live() {
     svc.publish_started(&younghee).await.unwrap();
     clock.set(9_000);
 
-    svc.reconcile_publishing(&[]).await.unwrap();
+    svc.reconcile_publishing(PublishingStatus::Known(vec![]))
+        .await
+        .unwrap();
 
     assert_eq!(svc.live_channels().await.unwrap(), []);
 }
@@ -603,7 +605,7 @@ async fn reconciling_opens_live_for_publishing_channel_without_open_live() {
     let (svc, clock, [_, younghee, _]) = seeded_service_with_clock().await;
     clock.set(9_000);
 
-    svc.reconcile_publishing(std::slice::from_ref(&younghee))
+    svc.reconcile_publishing(PublishingStatus::Known(vec![younghee.clone()]))
         .await
         .unwrap();
 
@@ -618,7 +620,7 @@ async fn reconciling_keeps_open_live_of_publishing_channel() {
     svc.publish_started(&chulsoo).await.unwrap();
     clock.set(9_000);
 
-    svc.reconcile_publishing(std::slice::from_ref(&chulsoo))
+    svc.reconcile_publishing(PublishingStatus::Known(vec![chulsoo.clone()]))
         .await
         .unwrap();
 
@@ -637,9 +639,12 @@ async fn reconciling_closes_ghost_lives_and_opens_missing_ones_together() {
     clock.set(9_000);
 
     // 철수는 계속 송출 중, 영희는 종료 알림 없이 끊김, 민수는 시작 알림을 놓침.
-    svc.reconcile_publishing(&[minsu.clone(), chulsoo.clone()])
-        .await
-        .unwrap();
+    svc.reconcile_publishing(PublishingStatus::Known(vec![
+        minsu.clone(),
+        chulsoo.clone(),
+    ]))
+    .await
+    .unwrap();
 
     let lives = svc.live_channels().await.unwrap();
     assert_eq!(
@@ -656,12 +661,55 @@ async fn reconciling_skips_publishing_path_that_is_not_a_channel() {
     let (svc, clock, [_, younghee, _]) = seeded_service_with_clock().await;
     clock.set(9_000);
 
-    svc.reconcile_publishing(&["nosuchchanne".to_string(), younghee.clone()])
+    svc.reconcile_publishing(PublishingStatus::Known(vec![
+        "nosuchchanne".to_string(),
+        younghee.clone(),
+    ]))
+    .await
+    .unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&younghee, "영희", "영희님의 라이브", 9_000)]);
+}
+
+#[tokio::test]
+async fn reconciling_when_media_server_is_unreachable_closes_every_open_live() {
+    let (svc, clock, [chulsoo, younghee, _]) = seeded_service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+    svc.publish_started(&younghee).await.unwrap();
+    clock.set(9_000);
+
+    // MediaMTX에 연결할 수 없으면(꺼져 있음) 그리로 송출하는 채널도 없다.
+    svc.reconcile_publishing(PublishingStatus::Unreachable)
+        .await
+        .unwrap();
+
+    assert_eq!(svc.live_channels().await.unwrap(), []);
+}
+
+#[tokio::test]
+async fn reconciling_with_unknown_publishing_status_leaves_lives_alone() {
+    let (svc, clock, [chulsoo, younghee, _]) = seeded_service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+    clock.set(2_000);
+    svc.publish_started(&younghee).await.unwrap();
+    clock.set(9_000);
+
+    // 연결은 됐지만 답을 쓸 수 없으면(HTTP 오류 상태, 응답 해석 실패) 누가 송출 중인지 모른다.
+    svc.reconcile_publishing(PublishingStatus::Unknown)
         .await
         .unwrap();
 
     let lives = svc.live_channels().await.unwrap();
-    assert_eq!(lives, [live(&younghee, "영희", "영희님의 라이브", 9_000)]);
+    assert_eq!(
+        lives,
+        [
+            live(&younghee, "영희", "영희님의 라이브", 2_000),
+            live(&chulsoo, "철수", "철수님의 라이브", 1_000),
+        ]
+    );
 }
 
 // ---- 라이브 제목: 다음 라이브 제목 복사와 라이브 중 변경 ----
