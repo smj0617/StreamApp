@@ -1,5 +1,7 @@
 use dioxus::prelude::*;
 
+use super::script_with_element_id;
+
 /// hls.js. 버전을 고정한다(MediaMTX v1.21.3의 내장 플레이어는 1.7.3을 쓴다).
 const HLS_JS: &str = "https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js";
 
@@ -8,10 +10,10 @@ const VIDEO_ID: &str = "live-video";
 
 /// `<video>`에 hls.js를 붙여 재생 주소를 재생한다. 재생 주소는 `dioxus.send`로 받는다
 /// (JS 문자열에 직접 넣지 않으므로 이스케이프할 필요가 없다). 라이브가 끝나면(`STOP_JS`)
-/// 오류 복구와 다시 받기를 하지 않는다.
+/// 오류 복구와 다시 받기를 하지 않는다. `elementId`는 [`VIDEO_ID`]다([`script_with_element_id`]).
 const ATTACH_JS: &str = r#"
 const src = await dioxus.recv();
-const video = document.getElementById("live-video");
+const video = document.getElementById(elementId);
 if (!video) return;
 // 라이브가 끝나면 STOP_JS가 켠다. 새 플레이어를 붙일 때마다 끈다.
 window.__streamappLiveEnded = false;
@@ -56,10 +58,11 @@ if (Hls.isSupported()) {
 "#;
 
 /// 라이브가 끝났을 때: 다시 받기를 멈추고 영상을 그 자리에서 멈춘다(마지막 화면은 남긴다).
+/// `elementId`는 [`VIDEO_ID`]다.
 const STOP_JS: &str = r#"
 window.__streamappLiveEnded = true;
 if (window.__streamappHls) window.__streamappHls.stopLoad();
-const video = document.getElementById("live-video");
+const video = document.getElementById(elementId);
 if (video) video.pause();
 "#;
 
@@ -78,13 +81,13 @@ pub fn HlsPlayer(src: String, ended: ReadSignal<bool>) -> Element {
     let src_for_attach = src.clone();
 
     use_effect(move || {
-        let attach = document::eval(ATTACH_JS);
+        let attach = document::eval(&script_with_element_id(VIDEO_ID, ATTACH_JS));
         let _ = attach.send(src_for_attach.clone());
     });
 
     use_effect(move || {
         if ended() {
-            document::eval(STOP_JS);
+            document::eval(&script_with_element_id(VIDEO_ID, STOP_JS));
         }
     });
 

@@ -5,12 +5,15 @@ use api::{ChatClientEvent, ChatServerEvent};
 use dioxus::fullstack::{use_websocket, WebSocketOptions, WebsocketError};
 use dioxus::prelude::*;
 
+use super::script_with_element_id;
 use super::shell::CurrentUser;
 
 /// 메시지 목록 요소의 id. 새 메시지가 오면 맨 아래로 내린다.
 const MESSAGES_ID: &str = "chat-messages";
 
-const SCROLL_TO_BOTTOM_JS: &str = r#"const list = document.getElementById("chat-messages"); if (list) list.scrollTop = list.scrollHeight;"#;
+/// 메시지 목록을 맨 아래로 내린다. `elementId`는 [`MESSAGES_ID`]다([`script_with_element_id`]).
+const SCROLL_TO_BOTTOM_JS: &str =
+    "const list = document.getElementById(elementId); if (list) list.scrollTop = list.scrollHeight;";
 
 /// 시청 페이지의 채팅. 라이브 중인 채널에서만 그린다.
 ///
@@ -59,7 +62,7 @@ pub fn Chat(channel_id: String, ended: Signal<bool>, live_title: Signal<String>)
 fn ChatMessages(messages: Signal<Vec<ChatMessage>>) -> Element {
     use_effect(move || {
         let _ = messages.read().len();
-        document::eval(SCROLL_TO_BOTTOM_JS);
+        document::eval(&script_with_element_id(MESSAGES_ID, SCROLL_TO_BOTTOM_JS));
     });
 
     rsx! {
