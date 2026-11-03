@@ -18,6 +18,8 @@ axum = { version = "0.8", optional = true }
 form_urlencoded = { version = "1", optional = true }
 # 앱 시작 시 MediaMTX Control API 조회(`server::mediamtx_api`). dioxus-fullstack이 쓰는 reqwest 0.12와 합쳐진다.
 reqwest = { version = "0.12", default-features = false, features = ["json"], optional = true }
+# 채팅: 채널별 broadcast(`service::chat`)와 채팅 WebSocket 어댑터의 `select!`. dioxus 서버가 쓰는 tokio와 합쳐진다.
+tokio = { version = "1", features = ["sync", "macros"], optional = true }
 
 [features]
 # 이름을 바꾸면 안 된다: 서버 함수 매크로가 `feature = "server"`를 전제로 코드를 만든다.
@@ -31,10 +33,11 @@ server = [
     "dep:axum",
     "dep:form_urlencoded",
     "dep:reqwest",
+    "dep:tokio",
 ]
 
 [dev-dependencies]
-tokio = { version = "1.48", features = ["macros", "rt"] }
+tokio = { version = "1.48", features = ["macros", "rt", "time"] }
 tower = { version = "0.5", features = ["util"] }
 serde_json = "1"
 
@@ -52,4 +55,9 @@ required-features = ["server"]
 [[test]]
 name = "watch_page"
 path = "tests/watch_page.rs"
+required-features = ["server"]
+
+[[test]]
+name = "chat"
+path = "tests/chat.rs"
 required-features = ["server"]

@@ -23,10 +23,13 @@ pub fn remembered_id(headers: &HeaderMap) -> Option<i64> {
         .ok()
 }
 
+/// 사용자를 고르지 않아 거절할 때 보여 줄 사유.
+pub const NOT_SELECTED: &str = "사용자를 먼저 골라 주세요";
+
 /// 현재 사용자가 있어야 하는 요청을, 사용자를 고르지 않았을 때 거절하는 오류(400과 사유).
 pub fn not_selected() -> ServerFnError {
     ServerFnError::ServerError {
-        message: "사용자를 먼저 골라 주세요".to_owned(),
+        message: NOT_SELECTED.to_owned(),
         code: 400,
         details: None,
     }

@@ -66,6 +66,17 @@ pub struct OpenLive {
     pub started_at_ms: i64,
 }
 
+/// 채팅 메시지 하나. 저장하지 않고 그 채널의 채팅 참여자에게 보내기만 한다.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct ChatMessage {
+    /// 보낸 사용자의 닉네임(보낼 때의 현재 사용자)
+    pub nickname: String,
+    /// 앞뒤 공백을 지운 내용
+    pub content: String,
+    /// 서버가 받은 시각(유닉스 밀리초)
+    pub sent_at_ms: i64,
+}
+
 /// 홈의 라이브 중인 채널 목록과, 목록을 만든 서버의 현재 시각.
 ///
 /// 경과 시간은 `server_now_ms - started_at_ms`로 계산한다. 웹(wasm)에서는

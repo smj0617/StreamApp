@@ -1,3 +1,4 @@
+mod chat;
 mod hls_player;
 mod home;
 mod not_found;

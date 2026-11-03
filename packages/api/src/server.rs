@@ -13,6 +13,7 @@
 //! }
 //! ```
 
+pub mod chat_socket;
 pub mod current_user;
 pub mod mediamtx_api;
 

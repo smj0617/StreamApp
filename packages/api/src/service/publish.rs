@@ -24,7 +24,8 @@ impl AppService {
 
     /// 송출 상태 맞추기: 라이브를 실제 송출(`publishing` = 지금 송출 중인 채널 ID 목록)에 맞춘다.
     ///
-    /// - 목록에 없는데 열려 있는 라이브는 닫는다(종료 알림을 놓친 유령 라이브).
+    /// - 목록에 없는데 열려 있는 라이브는 닫고, 그 채널의 채팅 참여자에게 라이브 종료를 알린다
+    ///   (종료 알림을 놓친 유령 라이브).
     /// - 목록에 있는데 열린 라이브가 없는 채널은 새 라이브를 연다(송출 시작 반영과 같다).
     /// - 목록에 있고 열린 라이브도 있는 채널은 그 라이브를 그대로 둔다(시작 시각·제목 유지).
     /// - 채널이 아닌 이름은 경고만 남기고 건너뛴다.
@@ -40,14 +41,18 @@ impl AppService {
             .collect();
 
         let now = self.now_ms();
-        let mut tx = self.pool.begin().await?;
-        for channel_id in live_channel_ids
+        let ghosts: Vec<&String> = live_channel_ids
             .iter()
             .filter(|id| !publishing.contains(id))
-        {
+            .collect();
+        let mut tx = self.pool.begin().await?;
+        for channel_id in &ghosts {
             close_open_live(&mut tx, channel_id, now).await?;
         }
         tx.commit().await?;
+        for channel_id in ghosts {
+            self.chat.end_live(channel_id);
+        }
 
         for channel_id in publishing {
             // 이미 열린 라이브가 있거나(같은 ID가 목록에 두 번 있어도) 방금 연 채널은 건너뛴다.

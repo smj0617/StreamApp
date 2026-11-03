@@ -1,13 +1,16 @@
 use api::dto::WatchPage;
 use dioxus::prelude::*;
 
+use super::chat::Chat;
 use super::hls_player::HlsPlayer;
 use super::shell::rejection_reason;
 use crate::Route;
 
-/// 시청 페이지 `/live/<채널ID>`: 라이브 중이면 영상을 자동 재생한다. 사용자를 고르지 않아도 볼 수 있다.
+/// 시청 페이지 `/live/<채널ID>`: 라이브 중이면 영상을 자동 재생하고 채팅을 연다. 사용자를 고르지
+/// 않아도 볼 수 있다(채팅은 읽기만).
 ///
-/// 들어올 때의 상태(라이브 중, 오프라인, 없는 채널)만 보여 준다. 새로고침해야 갱신된다.
+/// 들어올 때의 상태(라이브 중, 오프라인, 없는 채널)를 보여 준다. 보는 도중 라이브가 끝나면 채팅으로
+/// 종료 알림을 받아 종료를 표시한다. 오프라인에서 라이브로 바뀌는 것은 새로고침해야 보인다.
 #[component]
 pub fn Watch(channel_id: ReadSignal<String>) -> Element {
     // 서버 렌더링 때 불러온 정보를 HTML에 넣고, 클라이언트는 그 결과를 이어받는다.
@@ -18,8 +21,9 @@ pub fn Watch(channel_id: ReadSignal<String>) -> Element {
     rsx! {
         section { class: "watch",
             match state {
+                // 다른 채널로 옮겨 가면 종료 상태와 받은 메시지를 새로 시작한다.
                 Some(Ok(Some(page))) => rsx! {
-                    WatchChannel { page }
+                    WatchChannel { key: "{page.channel_id}", page }
                 },
                 Some(Ok(None)) => rsx! {
                     h1 { "채널을 찾을 수 없습니다" }
@@ -40,19 +44,34 @@ pub fn Watch(channel_id: ReadSignal<String>) -> Element {
     }
 }
 
-/// 있는 채널: 라이브 중이면 플레이어와 라이브 제목, 아니면 "오프라인".
+/// 있는 채널: 라이브 중이면 플레이어, 라이브 제목, 채팅. 아니면 "오프라인"(채팅은 닫혀 있다).
 #[component]
 fn WatchChannel(page: WatchPage) -> Element {
+    // 채팅이 라이브 종료 알림을 받으면 켠다: 영상을 멈추고 입력을 막는다. 받은 메시지는 남는다.
+    let ended = use_signal(|| false);
+
     match page.live {
         Some(live) => rsx! {
-            HlsPlayer { key: "{page.playback_url}", src: page.playback_url.clone() }
+            div { class: "watch-stage",
+                HlsPlayer { key: "{page.playback_url}", src: page.playback_url.clone(), ended }
+                if ended() {
+                    div { class: "watch-ended", role: "status",
+                        p { "라이브가 종료되었습니다" }
+                    }
+                }
+            }
             div { class: "watch-info",
                 h1 { class: "watch-title",
-                    span { class: "live-badge", "LIVE" }
+                    if ended() {
+                        span { class: "ended-badge", "종료" }
+                    } else {
+                        span { class: "live-badge", "LIVE" }
+                    }
                     " {live.title}"
                 }
                 p { class: "watch-channel", "{page.channel_name}" }
             }
+            Chat { channel_id: page.channel_id.clone(), ended }
         },
         None => rsx! {
             div { class: "watch-offline",
@@ -61,6 +80,10 @@ fn WatchChannel(page: WatchPage) -> Element {
             div { class: "watch-info",
                 p { class: "watch-channel", "{page.channel_name}" }
                 p { class: "muted", "지금은 라이브 중이 아닙니다. 송출이 시작되면 새로고침해 주세요." }
+            }
+            section { class: "chat", aria_label: "채팅",
+                h2 { class: "chat-heading", "채팅" }
+                p { class: "chat-closed muted", "채팅은 라이브 중에만 열립니다." }
             }
         },
     }

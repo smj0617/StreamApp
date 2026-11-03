@@ -342,3 +342,89 @@ body {
 .watch-info .muted {
   margin: 0;
 }
+
+/* 플레이어와, 라이브가 끝났을 때 그 위에 덮는 안내 */
+.watch-stage {
+  position: relative;
+}
+
+.watch-ended {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.ended-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #3a3b40;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* ---- 채팅 ---- */
+
+.chat {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bar-bg);
+}
+
+.chat-heading {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.chat-messages {
+  height: 280px;
+  margin: 0 0 10px;
+  padding: 8px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.chat-message {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+
+.chat-nickname {
+  margin-right: 8px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.chat-input .field-row input:disabled,
+.chat-input .field-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.chat-guide,
+.chat-closed {
+  margin: 6px 0 0;
+}
+
+.chat-count {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.chat-count.over {
+  color: #d93025;
+}

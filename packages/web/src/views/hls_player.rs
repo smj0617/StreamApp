@@ -7,16 +7,20 @@ const HLS_JS: &str = "https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js"
 const VIDEO_ID: &str = "live-video";
 
 /// `<video>`에 hls.js를 붙여 재생 주소를 재생한다. 재생 주소는 `dioxus.send`로 받는다
-/// (JS 문자열에 직접 넣지 않으므로 이스케이프할 필요가 없다).
+/// (JS 문자열에 직접 넣지 않으므로 이스케이프할 필요가 없다). 라이브가 끝나면(`STOP_JS`)
+/// 오류 복구와 다시 받기를 하지 않는다.
 const ATTACH_JS: &str = r#"
 const src = await dioxus.recv();
 const video = document.getElementById("live-video");
 if (!video) return;
+// 라이브가 끝나면 STOP_JS가 켠다. 새 플레이어를 붙일 때마다 끈다.
+window.__streamappLiveEnded = false;
 // <script>가 아직 다 받아지지 않았을 수 있으므로 window.Hls를 기다린다(최대 15초).
 for (let waited = 0; !window.Hls; waited += 100) {
   if (waited >= 15000) { console.error("hls.js를 불러오지 못했습니다"); return; }
   await new Promise((resolve) => setTimeout(resolve, 100));
 }
+if (window.__streamappLiveEnded) return;
 if (window.__streamappHls) { window.__streamappHls.destroy(); window.__streamappHls = null; }
 // 브라우저는 소리가 꺼진 영상만 자동 재생한다.
 video.muted = true;
@@ -26,12 +30,16 @@ if (Hls.isSupported()) {
   hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(src));
   hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
   hls.on(Hls.Events.ERROR, (_event, data) => {
-    if (!data.fatal) return;
+    // 라이브가 끝난 뒤의 오류(송출이 끊겨 재생 목록이 사라짐)는 되살리지 않는다.
+    if (!data.fatal || window.__streamappLiveEnded) return;
     if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
       hls.recoverMediaError();
     } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
       // hls.js가 재시도를 다 쓴 뒤다. 바로 다시 받으면 요청이 몰리므로 잠시 쉬고 처음부터 다시 받는다.
-      setTimeout(() => { if (window.__streamappHls === hls) hls.loadSource(src); }, 3000);
+      // 그 사이 라이브가 끝났으면 다시 받지 않는다.
+      setTimeout(() => {
+        if (window.__streamappHls === hls && !window.__streamappLiveEnded) hls.loadSource(src);
+      }, 3000);
     } else {
       hls.destroy();
       window.__streamappHls = null;
@@ -47,15 +55,24 @@ if (Hls.isSupported()) {
 }
 "#;
 
+/// 라이브가 끝났을 때: 다시 받기를 멈추고 영상을 그 자리에서 멈춘다(마지막 화면은 남긴다).
+const STOP_JS: &str = r#"
+window.__streamappLiveEnded = true;
+if (window.__streamappHls) window.__streamappHls.stopLoad();
+const video = document.getElementById("live-video");
+if (video) video.pause();
+"#;
+
 const DESTROY_JS: &str =
     "if (window.__streamappHls) { window.__streamappHls.destroy(); window.__streamappHls = null; }";
 
 /// 라이브 영상 플레이어: hls.js로 HLS 재생 주소를 소리 끈 채 자동 재생한다.
+/// `ended`가 켜지면(라이브 종료) 영상을 멈추고 다시 받지 않는다.
 ///
 /// 붙이기는 브라우저에서 화면에 그린 뒤에만 한다(서버 렌더링에서는 `use_effect`가 돌지 않는다).
 /// 재생 주소가 바뀌면 다시 붙도록 쓰는 쪽에서 `key`를 재생 주소로 준다.
 #[component]
-pub fn HlsPlayer(src: String) -> Element {
+pub fn HlsPlayer(src: String, ended: ReadSignal<bool>) -> Element {
     // 컴포넌트가 사라질 때는 컨텍스트를 찾지 못할 수 있으므로 document 핸들을 미리 잡아 둔다.
     let doc = use_hook(document::document);
     let src_for_attach = src.clone();
@@ -63,6 +80,12 @@ pub fn HlsPlayer(src: String) -> Element {
     use_effect(move || {
         let attach = document::eval(ATTACH_JS);
         let _ = attach.send(src_for_attach.clone());
+    });
+
+    use_effect(move || {
+        if ended() {
+            document::eval(STOP_JS);
+        }
     });
 
     use_drop(move || {
@@ -74,7 +97,8 @@ pub fn HlsPlayer(src: String) -> Element {
         video {
             id: VIDEO_ID,
             class: "watch-player",
-            controls: true,
+            // 끝난 라이브를 다시 재생하지 못하게 조작 막대를 숨긴다.
+            controls: !ended(),
             autoplay: true,
             muted: true,
             playsinline: true,

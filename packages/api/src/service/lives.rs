@@ -58,11 +58,25 @@ impl AppService {
         Ok(())
     }
 
-    /// 송출 종료 반영: 그 채널의 열린 라이브를 닫고 종료 시각을 기록한다.
-    /// 열린 라이브가 없으면(없는 채널 포함) 아무것도 하지 않는다.
+    /// 송출 종료 반영: 그 채널의 열린 라이브를 닫고 종료 시각을 기록한 뒤, 그 채널의 채팅
+    /// 참여자에게 라이브 종료를 알린다. 열린 라이브가 없으면(없는 채널 포함) 아무것도 하지 않는다.
     pub async fn publish_ended(&self, channel_id: &str) -> Result<(), ServiceError> {
         let mut conn = self.pool.acquire().await?;
-        close_open_live(&mut conn, channel_id, self.now_ms()).await
+        close_open_live(&mut conn, channel_id, self.now_ms()).await?;
+        // 닫은 뒤에 알린다: 알림을 받고 다시 참여하려는 쪽이 라이브 중이 아님을 보게 된다.
+        self.chat.end_live(channel_id);
+        Ok(())
+    }
+
+    /// 그 채널에 열린 라이브가 있는지. 없는 채널이면 `false`.
+    pub(super) async fn is_live(&self, channel_id: &str) -> Result<bool, ServiceError> {
+        let live = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM lives WHERE channel_id = ? AND ended_at_ms IS NULL)",
+        )
+        .bind(channel_id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(live)
     }
 
     /// 라이브 중인 채널 목록. 최근에 시작한 순서로 돌려준다.
