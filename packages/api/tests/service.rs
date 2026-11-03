@@ -426,7 +426,7 @@ async fn blank_next_live_title_clears_it() {
         .await
         .unwrap();
 
-    // 비워 두면 라이브가 시작될 때 기본 제목이 붙는다(제목 없는 라이브가 생기지 않게).
+    // 비워 두면 라이브가 시작될 때 자동 제목이 붙는다(제목 없는 라이브가 생기지 않게).
     for blank in ["", "   "] {
         let saved = svc.change_next_live_title(chulsoo.id, blank).await.unwrap();
         assert_eq!(saved, None, "{blank:?}");
@@ -815,7 +815,7 @@ async fn live_title_is_trimmed_before_saving() {
 }
 
 #[tokio::test]
-async fn blank_live_title_falls_back_to_default_title() {
+async fn blank_live_title_becomes_fallback_title() {
     let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
     let chulsoo_user = user_id(&svc, "철수").await;
     svc.change_next_live_title(chulsoo_user, "원래 제목")
@@ -824,7 +824,7 @@ async fn blank_live_title_falls_back_to_default_title() {
     clock.set(1_000);
     svc.publish_started(&chulsoo).await.unwrap();
 
-    // 제목 없는 라이브가 생기지 않게, 비우면 다음 라이브 제목 없이 시작했을 때와 같은 기본 제목이 된다.
+    // 제목 없는 라이브가 생기지 않게, 비우면 다음 라이브 제목 없이 시작했을 때와 같은 자동 제목이 된다.
     for blank in ["", "   "] {
         let saved = svc.change_live_title(chulsoo_user, blank).await.unwrap();
 

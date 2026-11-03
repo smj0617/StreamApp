@@ -178,10 +178,10 @@ impl TitleKind {
     fn description(self, nickname: &str) -> String {
         match self {
             TitleKind::NextLive => format!(
-                "송출을 시작하면 이 제목이 라이브 제목이 됩니다. 비워 두면 \"{nickname}님의 라이브\"가 붙습니다."
+                "송출을 시작하면 이 제목이 라이브 제목이 됩니다. 비워 두면 자동 제목 \"{nickname}님의 라이브\"가 붙습니다."
             ),
             TitleKind::Live => format!(
-                "지금 라이브 중입니다. 바꾼 제목은 홈과 시청 페이지에 반영됩니다(이미 열려 있는 페이지는 새로고침하면 보입니다). 비우면 \"{nickname}님의 라이브\"가 됩니다."
+                "지금 라이브 중입니다. 바꾼 제목은 홈과 시청 페이지에 반영됩니다(이미 열려 있는 페이지는 새로고침하면 보입니다). 비우면 자동 제목 \"{nickname}님의 라이브\"가 됩니다."
             ),
         }
     }
@@ -197,7 +197,7 @@ impl TitleKind {
     }
 }
 
-/// 제목 편집. 저장하면 서버가 다듬은 값(앞뒤 공백 제거, 라이브 제목을 비웠으면 기본 제목)으로
+/// 제목 편집. 저장하면 서버가 다듬은 값(앞뒤 공백 제거, 라이브 제목을 비웠으면 자동 제목)으로
 /// 바꿔 보여 준다.
 #[component]
 fn TitleEditor(kind: TitleKind, saved: String, nickname: String) -> Element {

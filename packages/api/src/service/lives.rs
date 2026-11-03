@@ -7,8 +7,8 @@ use super::channels::valid_title;
 use super::{AppService, ServiceError};
 use crate::dto::LiveChannel;
 
-/// 다음 라이브 제목이 비어 있을 때 채널 이름 뒤에 붙여 라이브 제목으로 쓴다.
-const DEFAULT_TITLE_SUFFIX: &str = "님의 라이브";
+/// 자동 제목(Fallback Title): 다음 라이브 제목이 비어 있을 때 채널 이름 뒤에 붙여 라이브 제목으로 쓴다.
+const FALLBACK_TITLE_SUFFIX: &str = "님의 라이브";
 
 #[derive(sqlx::FromRow)]
 struct LiveChannelRow {
@@ -32,7 +32,7 @@ impl From<LiveChannelRow> for LiveChannel {
 impl AppService {
     /// 송출 시작 반영: 그 채널의 새 라이브를 연다. 이미 열린 라이브가 있으면 먼저 닫는다.
     ///
-    /// 제목은 다음 라이브 제목이고, 비어 있으면 "`<채널 이름>`님의 라이브"다.
+    /// 제목은 다음 라이브 제목이고, 비어 있으면 자동 제목("`<채널 이름>`님의 라이브")이다.
     /// 없는 채널이면 [`ServiceError::UnknownChannel`].
     pub async fn publish_started(&self, channel_id: &str) -> Result<(), ServiceError> {
         let now = self.now_ms();
@@ -46,7 +46,7 @@ impl AppService {
              SELECT id, COALESCE(next_live_title, name || ?), ?
              FROM channels WHERE id = ?",
         )
-        .bind(DEFAULT_TITLE_SUFFIX)
+        .bind(FALLBACK_TITLE_SUFFIX)
         .bind(now)
         .bind(channel_id)
         .execute(&mut *tx)
@@ -95,7 +95,7 @@ impl AppService {
     /// 진행 중인 라이브 제목 바꾸기. 저장한 제목을 돌려준다.
     ///
     /// 제목 규칙은 다음 라이브 제목과 같다(앞뒤 공백을 지운 뒤 최대 100자). 비우면 다음 라이브
-    /// 제목 없이 시작했을 때처럼 "`<채널 이름>`님의 라이브"가 된다(제목 없는 라이브는 없다).
+    /// 제목 없이 시작했을 때처럼 자동 제목("`<채널 이름>`님의 라이브")이 된다(제목 없는 라이브는 없다).
     /// 그 사용자의 채널이 라이브 중이 아니면 [`ServiceError::NotLive`], 없는 사용자면
     /// [`ServiceError::UnknownUser`].
     pub async fn change_live_title(
@@ -111,7 +111,7 @@ impl AppService {
              RETURNING title",
         )
         .bind(title)
-        .bind(DEFAULT_TITLE_SUFFIX)
+        .bind(FALLBACK_TITLE_SUFFIX)
         .bind(user_id)
         .fetch_optional(&self.pool)
         .await?;

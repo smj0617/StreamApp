@@ -31,7 +31,7 @@ pub async fn change_next_live_title(title: String) -> Result<Option<String>, Ser
 }
 
 /// 현재 사용자 채널의 진행 중인 라이브 제목 바꾸기. 저장한 제목(앞뒤 공백을 지운 것,
-/// 비웠으면 "`<채널 이름>`님의 라이브")을 돌려준다. 라이브 중이 아니거나, 100자를 넘거나,
+/// 비웠으면 자동 제목 "`<채널 이름>`님의 라이브")을 돌려준다. 라이브 중이 아니거나, 100자를 넘거나,
 /// 사용자를 고르지 않았으면 400과 거절 사유.
 #[post("/api/my-channel/live-title", service: Service, headers: dioxus::fullstack::HeaderMap)]
 pub async fn change_live_title(title: String) -> Result<String, ServerFnError> {
