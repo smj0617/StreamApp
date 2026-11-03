@@ -93,3 +93,114 @@ body {
 .page {
   padding: 16px;
 }
+
+/* 상단 바 메뉴: 로고 바로 옆에 두고 남는 공간은 오른쪽(사용자 메뉴 앞)으로 민다. */
+.topnav {
+  margin-right: auto;
+}
+
+.topnav a {
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.topnav a:hover {
+  color: var(--accent);
+}
+
+/* ---- 내 채널 설정 ---- */
+
+.settings {
+  max-width: 640px;
+}
+
+.settings-card {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bar-bg);
+}
+
+.settings-card h2 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+.notice {
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bar-bg);
+}
+
+.field {
+  margin: 12px 0;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.field-row {
+  display: flex;
+  gap: 8px;
+}
+
+.field-row input,
+.field-row button {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.field-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.field-row .copy-value {
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.field-row button {
+  cursor: pointer;
+}
+
+.field-status,
+.form-ok {
+  margin: 4px 0 0;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.form-error {
+  margin: 4px 0 0;
+  color: #d93025;
+  font-size: 0.85rem;
+}
+
+.title-count {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.title-count.over {
+  color: #d93025;
+}

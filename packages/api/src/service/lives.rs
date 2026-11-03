@@ -39,12 +39,10 @@ impl AppService {
         // 읽기보다 쓰기를 먼저 해서 트랜잭션이 처음부터 쓰기 잠금을 잡게 한다
         // (읽기로 시작한 트랜잭션이 나중에 쓰기로 올라가면 동시 요청과 SQLITE_BUSY가 날 수 있다).
         close_open_live(&mut tx, channel_id, now).await?;
+        // 다음 라이브 제목은 비어 있으면 NULL로 저장된다(빈 문자열은 저장되지 않는다).
         let opened = sqlx::query(
             "INSERT INTO lives (channel_id, title, started_at_ms)
-             SELECT id,
-                    CASE WHEN TRIM(COALESCE(next_live_title, '')) = '' THEN name || ?
-                         ELSE next_live_title END,
-                    ?
+             SELECT id, COALESCE(next_live_title, name || ?), ?
              FROM channels WHERE id = ?",
         )
         .bind(DEFAULT_TITLE_SUFFIX)

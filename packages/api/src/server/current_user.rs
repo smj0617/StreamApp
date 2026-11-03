@@ -23,6 +23,15 @@ pub fn remembered_id(headers: &HeaderMap) -> Option<i64> {
         .ok()
 }
 
+/// 현재 사용자가 있어야 하는 요청을, 사용자를 고르지 않았을 때 거절하는 오류(400과 사유).
+pub fn not_selected() -> ServerFnError {
+    ServerFnError::ServerError {
+        message: "사용자를 먼저 골라 주세요".to_owned(),
+        code: 400,
+        details: None,
+    }
+}
+
 /// 지금 처리 중인 서버 함수 응답에 사용자 ID 쿠키를 싣는다.
 pub fn remember(user_id: i64) -> Result<(), ServerFnError> {
     // Path=/ 가 없으면 쿠키가 /api 아래 요청에만 실려 페이지(SSR) 요청에서 읽지 못한다.

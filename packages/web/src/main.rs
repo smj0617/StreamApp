@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 
 mod views;
 
-use views::{Home, NotFound, Shell};
+use views::{Home, NotFound, Settings, Shell};
 
 /// 모든 페이지는 `Shell` 레이아웃(상단 바) 안에 그린다.
 /// Dioxus Router의 경로 변수 문법은 `/:param`이다(axum·서버 함수의 `/{param}`과 다르다).
@@ -12,6 +12,8 @@ enum Route {
     #[layout(Shell)]
         #[route("/")]
         Home {},
+        #[route("/settings")]
+        Settings {},
         #[route("/:..segments")]
         NotFound { segments: Vec<String> },
 }

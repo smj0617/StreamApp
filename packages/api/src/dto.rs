@@ -19,12 +19,18 @@ pub struct CreatedUser {
     pub channel_name: String,
 }
 
-/// 내 채널 설정: 스트리머가 자기 채널로 송출할 때 필요한 값.
+/// 내 채널 설정: 스트리머가 자기 채널로 송출할 때 필요한 값과 다음 라이브 제목.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct MyChannelSettings {
     pub channel_id: String,
     /// 송출 키 (StreamKey). 채널 주인만 알아야 하는 비밀 값
     pub stream_key: String,
+    /// 다음 라이브 제목 (NextLiveTitle). 적지 않았으면 `None`
+    pub next_live_title: Option<String>,
+    /// OBS "서버" 칸에 그대로 넣을 값
+    pub obs_server: String,
+    /// OBS "스트림 키" 칸에 그대로 넣을 값: `<채널ID>?key=<송출 키>`
+    pub obs_stream_key: String,
 }
 
 /// 라이브 중인 채널 하나: 홈 카드에 보여 줄 값.

@@ -57,6 +57,9 @@ pub enum ServiceError {
     DuplicateNickname,
     #[error("없는 사용자입니다")]
     UnknownUser,
+    /// 다음 라이브 제목과 라이브 제목에 함께 쓴다.
+    #[error("제목은 100자를 넘을 수 없습니다")]
+    TitleTooLong,
     #[error("없는 채널입니다")]
     UnknownChannel,
 }
