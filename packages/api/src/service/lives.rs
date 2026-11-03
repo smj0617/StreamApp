@@ -120,7 +120,7 @@ impl AppService {
 }
 
 /// 그 채널의 열린 라이브(있으면)를 닫고 종료 시각을 기록한다.
-async fn close_open_live(
+pub(super) async fn close_open_live(
     conn: &mut sqlx::SqliteConnection,
     channel_id: &str,
     now: i64,

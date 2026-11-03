@@ -604,6 +604,87 @@ async fn publish_started_on_unknown_channel_is_rejected() {
     assert_eq!(svc.live_channels().await.unwrap(), []);
 }
 
+// ---- 송출 상태 맞추기: 앱이 시작할 때 라이브를 실제 송출(지금 송출 중인 채널 ID 목록)에 맞춘다 ----
+
+#[tokio::test]
+async fn reconciling_with_no_publishing_channels_closes_every_open_live() {
+    let (svc, clock, [chulsoo, younghee, _]) = service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+    svc.publish_started(&younghee).await.unwrap();
+    clock.set(9_000);
+
+    svc.reconcile_publishing(&[]).await.unwrap();
+
+    assert_eq!(svc.live_channels().await.unwrap(), []);
+}
+
+#[tokio::test]
+async fn reconciling_opens_live_for_publishing_channel_without_open_live() {
+    let (svc, clock, [_, younghee, _]) = service_with_clock().await;
+    clock.set(9_000);
+
+    svc.reconcile_publishing(std::slice::from_ref(&younghee))
+        .await
+        .unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&younghee, "영희", "영희님의 라이브", 9_000)]);
+}
+
+#[tokio::test]
+async fn reconciling_keeps_open_live_of_publishing_channel() {
+    let (svc, clock, [chulsoo, ..]) = service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+    clock.set(9_000);
+
+    svc.reconcile_publishing(std::slice::from_ref(&chulsoo))
+        .await
+        .unwrap();
+
+    // 같은 라이브가 이어진다: 시작 시각이 그대로다.
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&chulsoo, "철수", "철수님의 라이브", 1_000)]);
+}
+
+#[tokio::test]
+async fn reconciling_closes_ghost_lives_and_opens_missing_ones_together() {
+    let (svc, clock, [chulsoo, younghee, minsu]) = service_with_clock().await;
+    clock.set(1_000);
+    svc.publish_started(&chulsoo).await.unwrap();
+    clock.set(2_000);
+    svc.publish_started(&younghee).await.unwrap();
+    clock.set(9_000);
+
+    // 철수는 계속 송출 중, 영희는 종료 알림 없이 끊김, 민수는 시작 알림을 놓침.
+    svc.reconcile_publishing(&[minsu.clone(), chulsoo.clone()])
+        .await
+        .unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(
+        lives,
+        [
+            live(&minsu, "민수", "민수님의 라이브", 9_000),
+            live(&chulsoo, "철수", "철수님의 라이브", 1_000),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn reconciling_skips_publishing_path_that_is_not_a_channel() {
+    let (svc, clock, [_, younghee, _]) = service_with_clock().await;
+    clock.set(9_000);
+
+    svc.reconcile_publishing(&["nosuchchanne".to_string(), younghee.clone()])
+        .await
+        .unwrap();
+
+    let lives = svc.live_channels().await.unwrap();
+    assert_eq!(lives, [live(&younghee, "영희", "영희님의 라이브", 9_000)]);
+}
+
 // ---- 라이브 제목: 다음 라이브 제목 복사와 라이브 중 변경 ----
 
 /// 기본 사용자 중 그 닉네임을 가진 사용자의 ID.

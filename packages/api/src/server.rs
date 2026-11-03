@@ -14,6 +14,7 @@
 //! ```
 
 pub mod current_user;
+pub mod mediamtx_api;
 
 use std::path::PathBuf;
 
@@ -29,7 +30,8 @@ pub const DEFAULT_DB_PATH: &str = "data/streamapp.db";
 /// 서버 함수가 앱 서비스를 꺼내는 추출자. `main`에서 `.layer(Extension(service))`로 붙인다.
 pub type Service = dioxus::server::axum::Extension<AppService>;
 
-/// 앱 시작 준비: DB 연결, 마이그레이션 적용, (사용자가 없으면) 기본 데이터 생성.
+/// 앱 시작 준비: DB 연결, 마이그레이션 적용, (사용자가 없으면) 기본 데이터 생성,
+/// MediaMTX의 실제 송출에 라이브 맞추기.
 pub async fn init_from_env() -> anyhow::Result<AppService> {
     let path = std::env::var_os(DB_PATH_ENV)
         .map(PathBuf::from)
@@ -41,7 +43,31 @@ pub async fn init_from_env() -> anyhow::Result<AppService> {
     if service.seed_default_users().await? {
         tracing::info!("DB가 비어 있어 기본 사용자 3명과 채널을 만들었습니다");
     }
+    reconcile_with_mediamtx(&service).await?;
     Ok(service)
+}
+
+/// 앱이 꺼져 있던 동안 놓친 송출 시작·종료 알림을 보정한다: MediaMTX Control API로 지금 송출 중인
+/// 경로를 한 번 조회해 송출 상태 맞추기를 부른다. MediaMTX에 연결할 수 없으면 송출 중인 채널이 없다고
+/// 보고(열린 라이브를 모두 닫는다) 경고를 남긴다.
+async fn reconcile_with_mediamtx(service: &AppService) -> Result<(), ServiceError> {
+    let address = mediamtx_api::address_from_env();
+    let publishing = match mediamtx_api::publishing_paths(&address).await {
+        Ok(paths) => paths,
+        Err(e) => {
+            tracing::warn!(
+                "MediaMTX Control API({address})에 연결할 수 없어 송출 중인 채널이 없다고 보고 열린 라이브를 모두 닫습니다: {e}"
+            );
+            Vec::new()
+        }
+    };
+    service.reconcile_publishing(&publishing).await?;
+    tracing::info!(
+        "송출 상태 맞추기 완료: 송출 중인 경로 {}개, 라이브 중인 채널 {}개",
+        publishing.len(),
+        service.live_channels().await?.len()
+    );
+    Ok(())
 }
 
 impl From<ServiceError> for ServerFnError {
