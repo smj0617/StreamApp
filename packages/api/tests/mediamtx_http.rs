@@ -163,3 +163,55 @@ async fn other_actions_are_allowed() {
         );
     }
 }
+
+// ---- 송출 시작·종료 훅 ----
+
+/// MediaMTX 훅(`curl.exe -s -X POST <주소>?path=$MTX_PATH`)이 보내는 것과 같은, 본문 없는 POST.
+fn hook_request(hook: &str, channel_id: &str) -> Request<Body> {
+    Request::post(format!("/internal/mediamtx/hooks/{hook}?path={channel_id}"))
+        .body(Body::empty())
+        .unwrap()
+}
+
+/// 라이브 중인 채널 ID 목록(최근에 시작한 순서).
+async fn live_channel_ids(svc: &AppService) -> Vec<String> {
+    let lives = svc.live_channels().await.unwrap();
+    lives.into_iter().map(|live| live.channel_id).collect()
+}
+
+#[tokio::test]
+async fn available_hook_puts_channel_in_live_channels() {
+    let svc = service().await;
+    let channel = seeded_channel(&svc).await;
+    let app = mediamtx::router(svc.clone());
+
+    let res = send(&app, hook_request("available", &channel.channel_id)).await;
+
+    assert!(res.status().is_success(), "status: {}", res.status());
+    assert_eq!(live_channel_ids(&svc).await, [channel.channel_id]);
+}
+
+#[tokio::test]
+async fn unavailable_hook_takes_channel_out_of_live_channels() {
+    let svc = service().await;
+    let channel = seeded_channel(&svc).await;
+    let app = mediamtx::router(svc.clone());
+    send(&app, hook_request("available", &channel.channel_id)).await;
+
+    let res = send(&app, hook_request("unavailable", &channel.channel_id)).await;
+
+    assert!(res.status().is_success(), "status: {}", res.status());
+    assert_eq!(live_channel_ids(&svc).await, Vec::<String>::new());
+}
+
+#[tokio::test]
+async fn available_hook_for_unknown_channel_is_not_found() {
+    let svc = service().await;
+    seeded_channel(&svc).await;
+    let app = mediamtx::router(svc.clone());
+
+    let res = send(&app, hook_request("available", "nosuchchanne")).await;
+
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert_eq!(live_channel_ids(&svc).await, Vec::<String>::new());
+}

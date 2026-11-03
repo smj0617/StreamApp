@@ -14,8 +14,10 @@
 pub mod dto;
 
 mod channels;
+mod lives;
 mod users;
 pub use channels::*;
+pub use lives::*;
 pub use users::*;
 
 #[cfg(feature = "server")]

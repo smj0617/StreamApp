@@ -204,3 +204,61 @@ body {
 .title-count.over {
   color: #d93025;
 }
+
+/* ---- 홈: 라이브 카드 ---- */
+
+.home h1 {
+  margin: 0 0 16px;
+  font-size: 1.3rem;
+}
+
+.live-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.live-card {
+  height: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bar-bg);
+}
+
+.live-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+}
+
+.live-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #e5263b;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.live-elapsed {
+  color: var(--muted);
+}
+
+.live-title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.live-channel {
+  margin: 0;
+  color: var(--accent);
+  font-weight: 600;
+}

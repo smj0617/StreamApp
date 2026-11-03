@@ -14,7 +14,8 @@
        dx serve가 끝나면(Ctrl+C 포함) MediaMTX도 끈다.
 
 .PARAMETER Port
-    앱 포트. 기본 8080. MediaMTX가 부르는 앱 주소(인증)와 HLS가 허용하는 출처도 이 포트로 맞춘다.
+    앱 포트. 기본 8080. MediaMTX가 부르는 앱 주소(인증, 송출 시작·종료 훅)와 HLS가 허용하는 출처도
+    이 포트로 맞춘다.
 
 .PARAMETER NoBrowser
     브라우저를 자동으로 열지 않는다.
@@ -136,13 +137,19 @@ if ($LASTEXITCODE -ne 0) {
 $MtxLog = Join-Path $RepoRoot '.tools\mediamtx.log'
 Remove-Item -Force -ErrorAction SilentlyContinue $MtxLog
 
+# 송출 시작·종료 훅 명령. MediaMTX가 셸 없이 실행하므로 curl.exe를 이름으로 부른다.
+# $MTX_PATH(채널 ID)는 MediaMTX가 실행할 때 바꿔 넣으므로 작은따옴표로 글자 그대로 넘긴다.
+$HookCommand = "curl.exe -s -X POST http://127.0.0.1:$Port/internal/mediamtx/hooks"
+
 # 설정 파일의 값을 환경 변수(MTX_<대문자 키>)로 덮어쓴다: 앱 포트에 맞춘 주소와 로그 파일.
 # MediaMTX 프로세스에만 넘기고 바로 되돌린다.
 $MtxEnv = @{
-    MTX_AUTHHTTPADDRESS = "http://127.0.0.1:$Port/internal/mediamtx/auth"
-    MTX_HLSALLOWORIGINS = "http://localhost:$Port,http://127.0.0.1:$Port"
-    MTX_LOGDESTINATIONS = 'file'
-    MTX_LOGFILE         = $MtxLog
+    MTX_AUTHHTTPADDRESS               = "http://127.0.0.1:$Port/internal/mediamtx/auth"
+    MTX_HLSALLOWORIGINS               = "http://localhost:$Port,http://127.0.0.1:$Port"
+    MTX_PATHDEFAULTS_RUNONAVAILABLE   = "$HookCommand/available?path=" + '$MTX_PATH'
+    MTX_PATHDEFAULTS_RUNONUNAVAILABLE = "$HookCommand/unavailable?path=" + '$MTX_PATH'
+    MTX_LOGDESTINATIONS               = 'file'
+    MTX_LOGFILE                       = $MtxLog
 }
 $SavedEnv = @{}
 foreach ($Name in $MtxEnv.Keys) {
