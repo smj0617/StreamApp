@@ -29,7 +29,7 @@ pub type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
 pub struct AppService {
     pool: SqlitePool,
     clock: Clock,
-    /// 채널별 채팅 broadcast. 메모리에만 있다(채팅은 저장하지 않는다).
+    /// 열린 채팅마다 tokio broadcast 하나. 메모리에만 있다(채팅은 저장하지 않는다).
     chat: chat::ChatHub,
 }
 

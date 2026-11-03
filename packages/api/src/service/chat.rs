@@ -1,7 +1,7 @@
 //! 채팅(Chat) 동작: 채팅 참여와 채팅 보내기.
 //!
-//! 채팅은 라이브 하나에 딸려 라이브 중에만 열린다. 메시지는 저장하지 않고, 채널 ID마다 메모리에 둔
-//! broadcast로 그 채널의 참여자에게 보내기만 한다.
+//! 채팅은 라이브 하나에 딸려 라이브 중에만 열린다. 메시지는 저장하지 않고, 채팅마다(채널 ID로 찾는다)
+//! 메모리에 둔 tokio broadcast로 그 채팅의 참여자에게 보내기만 한다.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -12,8 +12,8 @@ use super::{AppService, ServiceError};
 use crate::dto::ChatMessage;
 use crate::rules::MAX_CHAT_CHARS;
 
-/// 채널 하나의 broadcast가 담아 두는 이벤트 수. 이보다 뒤처진 참여자는 밀린 메시지를 건너뛴다.
-const CHANNEL_CAPACITY: usize = 256;
+/// 채팅 하나의 broadcast 버퍼가 담아 두는 이벤트 수. 이보다 뒤처진 참여자는 밀린 메시지를 건너뛴다.
+const CHAT_BUFFER_CAPACITY: usize = 256;
 
 /// 채팅 참여자가 받는 이벤트.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,29 +46,31 @@ impl ChatSubscription {
     }
 }
 
-/// 채널 ID마다 broadcast 하나. 잠금 구간에서 `.await`하지 않으므로 `std::sync::Mutex`로 충분하다.
+/// 채팅마다 broadcast 송신자 하나. 잠금 구간에서 `.await`하지 않으므로 `std::sync::Mutex`로 충분하다.
 #[derive(Clone, Default)]
 pub(super) struct ChatHub {
-    channels: Arc<Mutex<HashMap<String, broadcast::Sender<ChatEvent>>>>,
+    /// 채널 ID → 그 채널에서 열린 채팅의 broadcast 송신자
+    chats: Arc<Mutex<HashMap<String, broadcast::Sender<ChatEvent>>>>,
 }
 
 impl ChatHub {
     fn subscribe(&self, channel_id: &str) -> ChatSubscription {
-        let mut channels = self.channels.lock().expect("채팅 허브 잠금");
-        let sender = channels
+        let mut chats = self.chats.lock().expect("채팅 허브 잠금");
+        let sender = chats
             .entry(channel_id.to_owned())
-            .or_insert_with(|| broadcast::channel(CHANNEL_CAPACITY).0);
+            .or_insert_with(|| broadcast::channel(CHAT_BUFFER_CAPACITY).0);
         ChatSubscription {
             receiver: sender.subscribe(),
         }
     }
 
-    fn publish(&self, channel_id: &str, event: ChatEvent) {
-        let mut channels = self.channels.lock().expect("채팅 허브 잠금");
-        if let Some(sender) = channels.get(channel_id) {
+    /// 그 채널의 채팅 참여자 모두에게 이벤트를 보낸다. 참여자가 없으면 아무것도 하지 않는다.
+    fn send(&self, channel_id: &str, event: ChatEvent) {
+        let mut chats = self.chats.lock().expect("채팅 허브 잠금");
+        if let Some(sender) = chats.get(channel_id) {
             // 참여자가 모두 나갔으면 보낼 곳이 없을 뿐이다. 남은 broadcast는 치운다.
             if sender.send(event).is_err() {
-                channels.remove(channel_id);
+                chats.remove(channel_id);
             }
         }
     }
@@ -76,24 +78,20 @@ impl ChatHub {
     /// 그 채널의 참여자 모두에게 라이브 종료를 알리고 broadcast를 치운다. 참여자의 구독은 알림을
     /// 받은 뒤 끝나고, 같은 채널의 다음 라이브는 새 broadcast를 쓴다.
     pub(super) fn end_live(&self, channel_id: &str) {
-        let removed = self
-            .channels
-            .lock()
-            .expect("채팅 허브 잠금")
-            .remove(channel_id);
+        let removed = self.chats.lock().expect("채팅 허브 잠금").remove(channel_id);
         if let Some(sender) = removed {
             let _ = sender.send(ChatEvent::LiveEnded);
         }
     }
 
-    /// 참여자가 하나도 없는 채널의 broadcast를 치운다.
+    /// 참여자가 하나도 없는 채팅의 broadcast를 치운다.
     fn forget_if_unused(&self, channel_id: &str) {
-        let mut channels = self.channels.lock().expect("채팅 허브 잠금");
-        if channels
+        let mut chats = self.chats.lock().expect("채팅 허브 잠금");
+        if chats
             .get(channel_id)
             .is_some_and(|sender| sender.receiver_count() == 0)
         {
-            channels.remove(channel_id);
+            chats.remove(channel_id);
         }
     }
 }
@@ -139,7 +137,7 @@ impl AppService {
             sent_at_ms: self.now_ms(),
         };
         self.chat
-            .publish(channel_id, ChatEvent::Message(message.clone()));
+            .send(channel_id, ChatEvent::Message(message.clone()));
         Ok(message)
     }
 }
