@@ -71,19 +71,33 @@ async fn reconcile_with_mediamtx(service: &AppService) -> Result<(), ServiceErro
     Ok(())
 }
 
+/// DB 오류 대신 화면에 보여 줄 문구. 자세한 내용은 로그에만 남긴다.
+const INTERNAL_ERROR: &str = "서버 내부 오류가 발생했습니다";
+
+/// 서비스 오류를 화면에 보여 줄 사유로 바꾼다. 규칙 위반은 사유 그대로, DB 오류는 자세한 내용을 로그에
+/// 남기고 [`INTERNAL_ERROR`]로 바꾼다. 서버 함수 오류(아래 `From`)와 채팅 거절 메시지가 함께 쓴다.
+pub(crate) fn displayed_reason(error: ServiceError) -> String {
+    match error {
+        ServiceError::Database(e) => {
+            tracing::error!("데이터베이스 오류: {e}");
+            INTERNAL_ERROR.to_owned()
+        }
+        rejected => rejected.to_string(),
+    }
+}
+
 impl From<ServiceError> for ServerFnError {
     fn from(error: ServiceError) -> Self {
-        match error {
-            ServiceError::Database(e) => {
-                tracing::error!("데이터베이스 오류: {e}");
-                ServerFnError::new("서버 내부 오류가 발생했습니다")
-            }
-            // 나머지는 규칙 위반: 400과 함께 사유를 그대로 보내 화면에 보여 준다.
-            rejected => ServerFnError::ServerError {
-                message: rejected.to_string(),
-                code: 400,
-                details: None,
-            },
+        // DB 오류는 서버 잘못(500)이고, 나머지는 규칙 위반(400)이라 사유를 화면에 그대로 보여 준다.
+        let code = if matches!(error, ServiceError::Database(_)) {
+            500
+        } else {
+            400
+        };
+        ServerFnError::ServerError {
+            message: displayed_reason(error),
+            code,
+            details: None,
         }
     }
 }

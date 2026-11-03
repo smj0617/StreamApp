@@ -8,6 +8,8 @@ use dioxus::fullstack::headers::{Cookie, HeaderMapExt};
 use dioxus::fullstack::{http, FullstackContext, HeaderMap};
 use dioxus::prelude::ServerFnError;
 
+use crate::service::ServiceError;
+
 /// 고른 사용자 ID를 담는 쿠키 이름.
 pub const COOKIE_NAME: &str = "streamapp_user";
 
@@ -33,6 +35,15 @@ pub fn not_selected() -> ServerFnError {
         code: 400,
         details: None,
     }
+}
+
+/// 현재 사용자 ID로 한 서비스 동작의 결과를 서버 함수 결과로 바꾼다. 기억된 사용자가 DB에 없으면
+/// ([`ServiceError::UnknownUser`], 예: DB 파일을 지운 뒤) 고르지 않은 것으로 보고 [`not_selected`]로 거절한다.
+pub fn unknown_as_not_selected<T>(result: Result<T, ServiceError>) -> Result<T, ServerFnError> {
+    result.map_err(|error| match error {
+        ServiceError::UnknownUser => not_selected(),
+        other => other.into(),
+    })
 }
 
 /// 지금 처리 중인 서버 함수 응답에 사용자 ID 쿠키를 싣는다.

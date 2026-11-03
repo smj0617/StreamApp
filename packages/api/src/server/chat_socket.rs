@@ -5,7 +5,7 @@
 
 use dioxus::fullstack::{TypedWebsocket, WebsocketError};
 
-use super::current_user;
+use super::{current_user, displayed_reason};
 use crate::chat::{ChatClientEvent, ChatServerEvent};
 use crate::service::{AppService, ChatEvent, ServiceError};
 
@@ -28,7 +28,9 @@ pub async fn serve(
         }
         Err(e) => {
             let _ = socket
-                .send(ChatServerEvent::Rejected { reason: reason(e) })
+                .send(ChatServerEvent::Rejected {
+                    reason: displayed_reason(e),
+                })
                 .await;
             return;
         }
@@ -57,7 +59,7 @@ pub async fn serve(
                             .send_chat(user_id, &channel_id, &content)
                             .await
                             .map(drop)
-                            .map_err(reason),
+                            .map_err(displayed_reason),
                         None => Err(current_user::NOT_SELECTED.to_owned()),
                     };
                     if let Err(reason) = sent {
@@ -72,16 +74,5 @@ pub async fn serve(
                 Err(_) => break,
             },
         }
-    }
-}
-
-/// 서비스 거절을 화면에 보여 줄 사유로 바꾼다. DB 오류의 자세한 내용은 로그에만 남긴다.
-fn reason(error: ServiceError) -> String {
-    match error {
-        ServiceError::Database(e) => {
-            tracing::error!("채팅 처리 중 데이터베이스 오류: {e}");
-            "서버 내부 오류가 발생했습니다".to_owned()
-        }
-        rejected => rejected.to_string(),
     }
 }

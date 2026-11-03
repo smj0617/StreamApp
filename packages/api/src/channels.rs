@@ -6,8 +6,6 @@ use dioxus::prelude::*;
 use crate::dto::MyChannelSettings;
 #[cfg(feature = "server")]
 use crate::server::{current_user, Service};
-#[cfg(feature = "server")]
-use crate::service::ServiceError;
 
 /// 현재 사용자의 채널 설정. 사용자를 고르지 않았거나 기억된 사용자가 DB에 없으면 `None`.
 #[get("/api/my-channel", service: Service, headers: dioxus::fullstack::HeaderMap)]
@@ -23,11 +21,7 @@ pub async fn my_channel_settings() -> Result<Option<MyChannelSettings>, ServerFn
 #[post("/api/my-channel/next-live-title", service: Service, headers: dioxus::fullstack::HeaderMap)]
 pub async fn change_next_live_title(title: String) -> Result<Option<String>, ServerFnError> {
     let user_id = current_user::remembered_id(&headers).ok_or_else(current_user::not_selected)?;
-    match service.change_next_live_title(user_id, &title).await {
-        // 기억된 사용자가 DB에 없으면 고르지 않은 것으로 본다.
-        Err(ServiceError::UnknownUser) => Err(current_user::not_selected()),
-        result => Ok(result?),
-    }
+    current_user::unknown_as_not_selected(service.change_next_live_title(user_id, &title).await)
 }
 
 /// 현재 사용자 채널의 진행 중인 라이브 제목 바꾸기. 저장한 제목(앞뒤 공백을 지운 것,
@@ -36,9 +30,5 @@ pub async fn change_next_live_title(title: String) -> Result<Option<String>, Ser
 #[post("/api/my-channel/live-title", service: Service, headers: dioxus::fullstack::HeaderMap)]
 pub async fn change_live_title(title: String) -> Result<String, ServerFnError> {
     let user_id = current_user::remembered_id(&headers).ok_or_else(current_user::not_selected)?;
-    match service.change_live_title(user_id, &title).await {
-        // 기억된 사용자가 DB에 없으면 고르지 않은 것으로 본다.
-        Err(ServiceError::UnknownUser) => Err(current_user::not_selected()),
-        result => Ok(result?),
-    }
+    current_user::unknown_as_not_selected(service.change_live_title(user_id, &title).await)
 }
