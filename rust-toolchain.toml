@@ -1,0 +1,6 @@
+# 로컬과 CI가 같은 Rust를 쓰게 고정한다. 올릴 때는 clippy 경고가 새로 생기지 않는지 함께 확인한다.
+[toolchain]
+channel = "1.99.1"
+targets = ["wasm32-unknown-unknown"]
+components = ["clippy", "rustfmt"]
+profile = "minimal"
