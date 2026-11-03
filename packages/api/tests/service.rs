@@ -272,12 +272,172 @@ async fn unknown_channel_cannot_publish() {
     assert!(!allowed);
 }
 
+// ---- 내 채널 설정 ----
+
+#[tokio::test]
+async fn channel_settings_give_obs_server_and_stream_key_values() {
+    let svc = service().await;
+    let created = svc.create_user("철수").await.unwrap();
+
+    let settings = svc
+        .my_channel_settings(created.user.id)
+        .await
+        .unwrap()
+        .expect("사용자마다 채널이 있다");
+
+    assert_eq!(settings.channel_id, created.channel_id);
+    assert_eq!(settings.obs_server, "rtmp://localhost/");
+    assert_eq!(
+        settings.obs_stream_key,
+        format!("{}?key={}", created.channel_id, settings.stream_key)
+    );
+}
+
+#[tokio::test]
+async fn creating_user_issues_hard_to_guess_stream_key_for_each_channel() {
+    let svc = service().await;
+    let a = svc.create_user("철수").await.unwrap().user;
+    let b = svc.create_user("영희").await.unwrap().user;
+
+    let key_a = svc
+        .my_channel_settings(a.id)
+        .await
+        .unwrap()
+        .unwrap()
+        .stream_key;
+    let key_b = svc
+        .my_channel_settings(b.id)
+        .await
+        .unwrap()
+        .unwrap()
+        .stream_key;
+
+    assert_ne!(key_a, key_b);
+    for key in [&key_a, &key_b] {
+        assert!(key.len() >= 32, "{key:?}");
+        assert!(key.chars().all(|c| c.is_ascii_alphanumeric()), "{key:?}");
+    }
+}
+
 #[tokio::test]
 async fn unknown_user_has_no_channel_settings() {
     let svc = service().await;
-    seeded_channels(&svc).await;
+    let chulsoo = svc.create_user("철수").await.unwrap().user;
 
-    let settings = svc.my_channel_settings(9999).await.unwrap();
+    let settings = svc.my_channel_settings(chulsoo.id + 1).await.unwrap();
 
     assert_eq!(settings, None);
+}
+
+/// 그 사용자의 채널 설정에 보이는 다음 라이브 제목.
+async fn next_live_title(svc: &AppService, user_id: i64) -> Option<String> {
+    let settings = svc.my_channel_settings(user_id).await.unwrap();
+    settings.expect("사용자마다 채널이 있다").next_live_title
+}
+
+#[tokio::test]
+async fn next_live_title_is_empty_until_written() {
+    let svc = service().await;
+    let chulsoo = svc.create_user("철수").await.unwrap().user;
+
+    assert_eq!(next_live_title(&svc, chulsoo.id).await, None);
+}
+
+#[tokio::test]
+async fn changed_next_live_title_shows_in_own_channel_settings_only() {
+    let svc = service().await;
+    let chulsoo = svc.create_user("철수").await.unwrap().user;
+    let younghee = svc.create_user("영희").await.unwrap().user;
+
+    svc.change_next_live_title(chulsoo.id, "오늘은 마인크래프트")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        next_live_title(&svc, chulsoo.id).await.as_deref(),
+        Some("오늘은 마인크래프트")
+    );
+    assert_eq!(next_live_title(&svc, younghee.id).await, None);
+}
+
+#[tokio::test]
+async fn next_live_title_of_100_characters_is_accepted() {
+    let svc = service().await;
+    let chulsoo = svc.create_user("철수").await.unwrap().user;
+    // 글자 수로 센다: 한글 100자는 300바이트지만 허용된다.
+    let title = "가".repeat(100);
+
+    svc.change_next_live_title(chulsoo.id, &title)
+        .await
+        .unwrap();
+
+    assert_eq!(next_live_title(&svc, chulsoo.id).await, Some(title));
+}
+
+#[tokio::test]
+async fn next_live_title_longer_than_100_characters_is_rejected() {
+    let svc = service().await;
+    let chulsoo = svc.create_user("철수").await.unwrap().user;
+    svc.change_next_live_title(chulsoo.id, "원래 제목")
+        .await
+        .unwrap();
+
+    for title in ["가".repeat(101), "a".repeat(101)] {
+        let result = svc.change_next_live_title(chulsoo.id, &title).await;
+        assert!(
+            matches!(result, Err(ServiceError::TitleTooLong)),
+            "{} -> {result:?}",
+            title.chars().count()
+        );
+    }
+    assert_eq!(
+        next_live_title(&svc, chulsoo.id).await.as_deref(),
+        Some("원래 제목")
+    );
+}
+
+#[tokio::test]
+async fn next_live_title_is_trimmed_before_saving() {
+    let svc = service().await;
+    let chulsoo = svc.create_user("철수").await.unwrap().user;
+
+    let saved = svc
+        .change_next_live_title(chulsoo.id, "  저녁 수다 \t")
+        .await
+        .unwrap();
+
+    assert_eq!(saved.as_deref(), Some("저녁 수다"));
+    assert_eq!(
+        next_live_title(&svc, chulsoo.id).await.as_deref(),
+        Some("저녁 수다")
+    );
+}
+
+#[tokio::test]
+async fn blank_next_live_title_clears_it() {
+    let svc = service().await;
+    let chulsoo = svc.create_user("철수").await.unwrap().user;
+    svc.change_next_live_title(chulsoo.id, "원래 제목")
+        .await
+        .unwrap();
+
+    // 비워 두면 라이브가 시작될 때 기본 제목이 붙는다(제목 없는 라이브가 생기지 않게).
+    for blank in ["", "   "] {
+        let saved = svc.change_next_live_title(chulsoo.id, blank).await.unwrap();
+        assert_eq!(saved, None, "{blank:?}");
+        assert_eq!(next_live_title(&svc, chulsoo.id).await, None, "{blank:?}");
+    }
+}
+
+#[tokio::test]
+async fn next_live_title_of_unknown_user_is_rejected() {
+    let svc = service().await;
+    let chulsoo = svc.create_user("철수").await.unwrap().user;
+
+    let result = svc.change_next_live_title(chulsoo.id + 1, "제목").await;
+
+    assert!(
+        matches!(result, Err(ServiceError::UnknownUser)),
+        "{result:?}"
+    );
 }

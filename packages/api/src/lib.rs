@@ -13,7 +13,9 @@
 
 pub mod dto;
 
+mod channels;
 mod users;
+pub use channels::*;
 pub use users::*;
 
 #[cfg(feature = "server")]

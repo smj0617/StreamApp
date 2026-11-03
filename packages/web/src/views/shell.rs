@@ -28,6 +28,9 @@ pub fn Shell() -> Element {
     rsx! {
         header { class: "topbar",
             Link { class: "brand", to: Route::Home {}, "StreamApp" }
+            nav { class: "topnav",
+                Link { to: Route::Settings {}, "내 채널 설정" }
+            }
             UserMenu {}
         }
         main { class: "page", Outlet::<Route> {} }
@@ -126,7 +129,7 @@ fn UserMenu() -> Element {
 }
 
 /// 서버 함수 오류를 화면에 보여 줄 문장으로 바꾼다. 규칙 위반(400)은 서버가 보낸 사유 그대로.
-fn rejection_reason(error: ServerFnError) -> String {
+pub(crate) fn rejection_reason(error: ServerFnError) -> String {
     match error {
         ServerFnError::ServerError { message, .. } => message,
         other => other.to_string(),
