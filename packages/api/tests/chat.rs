@@ -297,6 +297,32 @@ async fn reconciling_that_closes_ghost_live_tells_its_participants_live_ended() 
 }
 
 #[tokio::test]
+async fn publish_started_while_live_tells_participants_of_replaced_live_that_it_ended() {
+    let (svc, _) = service_with_clock().await;
+    let (chulsoo, chulsoo_channel) = user(&svc, "철수").await;
+    svc.publish_started(&chulsoo_channel).await.unwrap();
+    let mut old_viewer = svc.join_chat(&chulsoo_channel).await.unwrap();
+
+    // 송출 종료 알림을 놓친 채 송출 시작 알림이 다시 왔다: 열린 라이브를 닫고 새 라이브를 연다.
+    svc.publish_started(&chulsoo_channel).await.unwrap();
+    let mut new_viewer = svc.join_chat(&chulsoo_channel).await.unwrap();
+    svc.send_chat(chulsoo, &chulsoo_channel, "새 라이브예요")
+        .await
+        .unwrap();
+
+    // 닫힌 라이브의 참여자는 송출 종료 때처럼 종료 알림으로 끝나고 새 라이브의 메시지를 받지 않는다.
+    assert_eq!(
+        next_event(&mut old_viewer).await,
+        Some(ChatEvent::LiveEnded)
+    );
+    assert_eq!(next_event(&mut old_viewer).await, None);
+    assert_eq!(
+        next_event(&mut new_viewer).await,
+        Some(message("철수", "새 라이브예요", 0))
+    );
+}
+
+#[tokio::test]
 async fn chat_of_new_live_on_same_channel_can_be_joined_after_previous_live_ended() {
     let (svc, _) = service_with_clock().await;
     let (chulsoo, chulsoo_channel) = user(&svc, "철수").await;

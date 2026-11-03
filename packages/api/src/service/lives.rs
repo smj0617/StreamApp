@@ -28,7 +28,8 @@ impl From<LiveChannelRow> for LiveChannel {
 }
 
 impl AppService {
-    /// 송출 시작 반영: 그 채널의 새 라이브를 연다. 이미 열린 라이브가 있으면 먼저 닫는다.
+    /// 송출 시작 반영: 그 채널의 새 라이브를 연다. 이미 열린 라이브가 있으면(송출 종료 알림을 놓쳤다)
+    /// 먼저 닫고, 송출 종료 반영 때처럼 그 라이브의 채팅 참여자에게 라이브 종료를 알린다.
     ///
     /// 제목은 다음 라이브 제목이고, 비어 있으면 자동 제목("`<채널 이름>`님의 라이브")이다.
     /// 없는 채널이면 [`ServiceError::UnknownChannel`].
@@ -37,7 +38,7 @@ impl AppService {
         let mut tx = self.pool.begin().await?;
         // 읽기보다 쓰기를 먼저 해서 트랜잭션이 처음부터 쓰기 잠금을 잡게 한다
         // (읽기로 시작한 트랜잭션이 나중에 쓰기로 올라가면 동시 요청과 SQLITE_BUSY가 날 수 있다).
-        close_open_live(&mut tx, channel_id, now).await?;
+        let replaced = close_open_live(&mut tx, channel_id, now).await?;
         let channel = sqlx::query_as::<_, (String, Option<String>)>(
             "SELECT name, next_live_title FROM channels WHERE id = ?",
         )
@@ -55,6 +56,12 @@ impl AppService {
             .bind(now)
             .execute(&mut *tx)
             .await?;
+        if replaced {
+            // 커밋 전에 알린다. 지금 참여자는 닫힌 라이브의 참여자이고, 이 뒤에 참여하는 쪽은 새
+            // broadcast에 붙어 새 라이브의 채팅을 받는다(커밋 뒤에 알리면 그 사이 새 라이브에 참여한
+            // 쪽까지 종료 알림을 받는다).
+            self.chat.end_live(channel_id);
+        }
         tx.commit().await?;
         Ok(())
     }
@@ -129,16 +136,18 @@ impl AppService {
     }
 }
 
-/// 그 채널의 열린 라이브(있으면)를 닫고 종료 시각을 기록한다.
+/// 그 채널의 열린 라이브(있으면)를 닫고 종료 시각을 기록한다. 닫은 라이브가 있으면 `true`.
 pub(super) async fn close_open_live(
     conn: &mut sqlx::SqliteConnection,
     channel_id: &str,
     now: i64,
-) -> Result<(), ServiceError> {
-    sqlx::query("UPDATE lives SET ended_at_ms = ? WHERE channel_id = ? AND ended_at_ms IS NULL")
-        .bind(now)
-        .bind(channel_id)
-        .execute(conn)
-        .await?;
-    Ok(())
+) -> Result<bool, ServiceError> {
+    let closed = sqlx::query(
+        "UPDATE lives SET ended_at_ms = ? WHERE channel_id = ? AND ended_at_ms IS NULL",
+    )
+    .bind(now)
+    .bind(channel_id)
+    .execute(conn)
+    .await?;
+    Ok(closed.rows_affected() > 0)
 }
