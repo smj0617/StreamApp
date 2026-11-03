@@ -1,6 +1,6 @@
 //! 라이브 서버 함수. 요청을 앱 서비스 호출로 바꾸기만 한다.
 //!
-//! 라이브를 열고 닫는 것은 MediaMTX 훅([`crate::mediamtx`])이 하고, 앱에는 "방송 시작" 버튼이 없다.
+//! 라이브를 열고 닫는 것은 MediaMTX 훅([`crate::mediamtx`])이 하고, 앱에는 "라이브 시작" 버튼이 없다.
 
 use dioxus::prelude::*;
 
