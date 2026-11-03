@@ -47,12 +47,47 @@ body {
 }
 
 .user-menu {
-  min-width: 160px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-menu select,
+.user-menu input,
+.user-menu button {
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg);
   color: var(--fg);
+  font: inherit;
+}
+
+.user-menu select {
+  min-width: 140px;
+}
+
+.user-menu input {
+  width: 120px;
+}
+
+.user-menu button {
+  cursor: pointer;
+}
+
+/* 거절 사유: 상단 바 높이를 바꾸지 않도록 메뉴 아래에 띄운다. */
+.user-menu-error {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #d93025;
+  color: #fff;
+  font-size: 0.85rem;
+  white-space: nowrap;
 }
 
 .page {

@@ -13,6 +13,8 @@
 //! }
 //! ```
 
+pub mod current_user;
+
 use std::path::PathBuf;
 
 use dioxus::prelude::ServerFnError;
@@ -49,6 +51,12 @@ impl From<ServiceError> for ServerFnError {
                 tracing::error!("데이터베이스 오류: {e}");
                 ServerFnError::new("서버 내부 오류가 발생했습니다")
             }
+            // 나머지는 규칙 위반: 400과 함께 사유를 그대로 보내 화면에 보여 준다.
+            rejected => ServerFnError::ServerError {
+                message: rejected.to_string(),
+                code: 400,
+                details: None,
+            },
         }
     }
 }

@@ -26,11 +26,20 @@ impl AppService {
     }
 }
 
-/// 서비스 동작이 실패한 이유.
+/// 서비스 동작이 실패한 이유. `Database` 말고는 모두 규칙 위반이며,
+/// 메시지는 화면에 그대로 보여 줄 거절 사유다.
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
     #[error("데이터베이스 오류: {0}")]
     Database(#[from] sqlx::Error),
+    #[error("닉네임은 앞뒤 공백을 뺀 2~10자여야 합니다")]
+    NicknameLength,
+    #[error("닉네임에는 한글, 영문, 숫자만 쓸 수 있습니다")]
+    NicknameCharacters,
+    #[error("이미 있는 닉네임입니다(영문 대소문자는 구별하지 않습니다)")]
+    DuplicateNickname,
+    #[error("없는 사용자입니다")]
+    UnknownUser,
 }
 
 fn now_ms() -> i64 {
