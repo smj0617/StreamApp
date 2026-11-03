@@ -20,6 +20,8 @@ const CHAT_BUFFER_CAPACITY: usize = 256;
 pub enum ChatEvent {
     /// 그 채널에 누군가 보낸 메시지
     Message(ChatMessage),
+    /// 참여한 라이브의 제목이 바뀌었다(스트리머가 라이브 중에 바꿨다). `title`은 저장된 제목이다.
+    LiveTitleChanged { title: String },
     /// 참여한 라이브가 끝났다. 이 뒤로는 이벤트가 없다.
     LiveEnded,
 }
@@ -65,7 +67,7 @@ impl ChatHub {
     }
 
     /// 그 채널의 채팅 참여자 모두에게 이벤트를 보낸다. 참여자가 없으면 아무것도 하지 않는다.
-    fn send(&self, channel_id: &str, event: ChatEvent) {
+    pub(super) fn send(&self, channel_id: &str, event: ChatEvent) {
         let mut chats = self.chats.lock().expect("채팅 허브 잠금");
         if let Some(sender) = chats.get(channel_id) {
             // 참여자가 모두 나갔으면 보낼 곳이 없을 뿐이다. 남은 broadcast는 치운다.

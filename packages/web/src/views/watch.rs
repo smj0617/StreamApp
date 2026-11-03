@@ -9,8 +9,9 @@ use crate::Route;
 /// 시청 페이지 `/live/<채널ID>`: 라이브 중이면 영상을 자동 재생하고 채팅을 연다. 사용자를 고르지
 /// 않아도 볼 수 있다(채팅은 읽기만).
 ///
-/// 들어올 때의 상태(라이브 중, 오프라인, 없는 채널)를 보여 준다. 보는 도중 라이브가 끝나면 채팅으로
-/// 종료 알림을 받아 종료를 표시한다. 오프라인에서 라이브로 바뀌는 것은 새로고침해야 보인다.
+/// 들어올 때의 상태(라이브 중, 오프라인, 없는 채널)를 보여 준다. 보는 도중 라이브 제목이 바뀌거나
+/// 라이브가 끝나면 채팅으로 알림을 받아 바로 표시한다. 오프라인에서 라이브로 바뀌는 것은 새로고침해야
+/// 보인다.
 #[component]
 pub fn Watch(channel_id: ReadSignal<String>) -> Element {
     // 서버 렌더링 때 불러온 정보를 HTML에 넣고, 클라이언트는 그 결과를 이어받는다.
@@ -49,9 +50,16 @@ pub fn Watch(channel_id: ReadSignal<String>) -> Element {
 fn WatchChannel(page: WatchPage) -> Element {
     // 채팅이 라이브 종료 알림을 받으면 켠다: 영상을 멈추고 입력을 막는다. 받은 메시지는 남는다.
     let ended = use_signal(|| false);
+    // 보여 주는 라이브 제목. 채팅이 라이브 제목 바뀜 알림을 받으면 바꾼다.
+    let title = use_signal(|| {
+        page.live
+            .as_ref()
+            .map(|live| live.title.clone())
+            .unwrap_or_default()
+    });
 
     match page.live {
-        Some(live) => rsx! {
+        Some(_) => rsx! {
             div { class: "watch-stage",
                 HlsPlayer { key: "{page.playback_url}", src: page.playback_url.clone(), ended }
                 if ended() {
@@ -67,11 +75,11 @@ fn WatchChannel(page: WatchPage) -> Element {
                     } else {
                         span { class: "live-badge", "LIVE" }
                     }
-                    " {live.title}"
+                    " {title}"
                 }
                 p { class: "watch-channel", "{page.channel_name}" }
             }
-            Chat { channel_id: page.channel_id.clone(), ended }
+            Chat { channel_id: page.channel_id.clone(), ended, live_title: title }
         },
         None => rsx! {
             div { class: "watch-offline",

@@ -16,9 +16,9 @@ const SCROLL_TO_BOTTOM_JS: &str = r#"const list = document.getElementById("chat-
 ///
 /// 들어온 뒤의 메시지만 보인다. 받은 메시지는 이 컴포넌트에 두므로, 사용자를 바꿔 연결을 다시
 /// 맺어도(아래 `ChatConnection`을 다시 마운트해도) 그대로 남는다. 라이브가 끝나면 `ended`가 켜지고
-/// 입력이 막힌다.
+/// 입력이 막힌다. 스트리머가 라이브 제목을 바꾸면 `live_title`을 바꾼다.
 #[component]
-pub fn Chat(channel_id: String, ended: Signal<bool>) -> Element {
+pub fn Chat(channel_id: String, ended: Signal<bool>, live_title: Signal<String>) -> Element {
     let CurrentUser(current) = use_context::<CurrentUser>();
     let messages = use_signal(Vec::<ChatMessage>::new);
     // 연결은 브라우저에서 화면을 그린 뒤에만 맺는다(서버 렌더링에서는 `use_effect`가 돌지 않는다).
@@ -45,6 +45,7 @@ pub fn Chat(channel_id: String, ended: Signal<bool>) -> Element {
                     can_send: user_id.is_some(),
                     messages,
                     ended,
+                    live_title,
                 }
             } else {
                 ClosedChatInput { placeholder: "채팅에 연결하는 중입니다" }
@@ -77,7 +78,7 @@ fn ChatMessages(messages: Signal<Vec<ChatMessage>>) -> Element {
     }
 }
 
-/// 연결 하나: 받은 이벤트를 목록에 더하고, 입력한 메시지를 보낸다.
+/// 연결 하나: 받은 메시지를 목록에 더하고(라이브 제목 바뀜·종료 알림은 신호에 반영), 입력한 메시지를 보낸다.
 ///
 /// 연결이 끊겨도 다시 연결하지 않는다(닫힌 연결에서 다시 연결을 기다리면 곧바로 끝나 무한히 돈다).
 /// 다시 연결은 부모가 key를 바꿔 이 컴포넌트를 새로 마운트하는 것으로만 한다.
@@ -87,9 +88,11 @@ fn ChatConnection(
     can_send: bool,
     messages: Signal<Vec<ChatMessage>>,
     ended: Signal<bool>,
+    live_title: Signal<String>,
 ) -> Element {
     let mut messages = messages;
     let mut ended = ended;
+    let mut live_title = live_title;
     let mut joined = use_signal(|| false);
     let mut lost = use_signal(|| false);
     let mut rejection = use_signal(|| None::<String>);
@@ -103,6 +106,7 @@ fn ChatConnection(
             match socket.recv().await {
                 Ok(ChatServerEvent::Joined) => joined.set(true),
                 Ok(ChatServerEvent::Message(message)) => messages.push(message),
+                Ok(ChatServerEvent::LiveTitleChanged { title }) => live_title.set(title),
                 Ok(ChatServerEvent::Rejected { reason }) => rejection.set(Some(reason)),
                 Ok(ChatServerEvent::LiveEnded) => {
                     ended.set(true);

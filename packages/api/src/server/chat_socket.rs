@@ -47,6 +47,11 @@ pub async fn serve(
                         break;
                     }
                 }
+                Some(ChatEvent::LiveTitleChanged { title }) => {
+                    if socket.send(ChatServerEvent::LiveTitleChanged { title }).await.is_err() {
+                        break;
+                    }
+                }
                 Some(ChatEvent::LiveEnded) | None => {
                     let _ = socket.send(ChatServerEvent::LiveEnded).await;
                     break;

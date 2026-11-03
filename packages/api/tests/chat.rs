@@ -223,6 +223,82 @@ async fn message_is_trimmed_and_200_characters_after_trimming_is_accepted() {
     );
 }
 
+// ---- 라이브 제목 바뀜 알림 ----
+
+fn title_changed(title: &str) -> ChatEvent {
+    ChatEvent::LiveTitleChanged {
+        title: title.to_string(),
+    }
+}
+
+#[tokio::test]
+async fn changing_live_title_tells_every_participant_the_saved_title() {
+    let (svc, _) = service_with_clock().await;
+    let (chulsoo, chulsoo_channel) = user(&svc, "철수").await;
+    svc.publish_started(&chulsoo_channel).await.unwrap();
+    let mut first = svc.join_chat(&chulsoo_channel).await.unwrap();
+    let mut second = svc.join_chat(&chulsoo_channel).await.unwrap();
+
+    svc.change_live_title(chulsoo, "  새 제목  ").await.unwrap();
+    svc.change_live_title(chulsoo, "").await.unwrap();
+
+    for subscription in [&mut first, &mut second] {
+        // 저장한 제목 그대로: 앞뒤 공백을 지우고, 비우면 자동 제목이다.
+        assert_eq!(
+            next_event(subscription).await,
+            Some(title_changed("새 제목"))
+        );
+        assert_eq!(
+            next_event(subscription).await,
+            Some(title_changed("철수님의 라이브"))
+        );
+    }
+}
+
+#[tokio::test]
+async fn changing_live_title_does_not_tell_participants_of_other_channel() {
+    let (svc, _) = service_with_clock().await;
+    let (chulsoo, chulsoo_channel) = user(&svc, "철수").await;
+    let (younghee, younghee_channel) = user(&svc, "영희").await;
+    svc.publish_started(&chulsoo_channel).await.unwrap();
+    svc.publish_started(&younghee_channel).await.unwrap();
+    let mut younghee_viewer = svc.join_chat(&younghee_channel).await.unwrap();
+
+    svc.change_live_title(chulsoo, "철수의 새 제목")
+        .await
+        .unwrap();
+    svc.send_chat(younghee, &younghee_channel, "저는 그대로예요")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        next_event(&mut younghee_viewer).await,
+        Some(message("영희", "저는 그대로예요", 0))
+    );
+}
+
+#[tokio::test]
+async fn rejected_live_title_change_tells_nobody() {
+    let (svc, _) = service_with_clock().await;
+    let (chulsoo, chulsoo_channel) = user(&svc, "철수").await;
+    svc.publish_started(&chulsoo_channel).await.unwrap();
+    let mut viewer = svc.join_chat(&chulsoo_channel).await.unwrap();
+
+    let result = svc.change_live_title(chulsoo, &"가".repeat(101)).await;
+    svc.send_chat(chulsoo, &chulsoo_channel, "제목은 그대로예요")
+        .await
+        .unwrap();
+
+    assert!(
+        matches!(result, Err(ServiceError::TitleTooLong)),
+        "{result:?}"
+    );
+    assert_eq!(
+        next_event(&mut viewer).await,
+        Some(message("철수", "제목은 그대로예요", 0))
+    );
+}
+
 // ---- 라이브 종료 알림 ----
 
 #[tokio::test]

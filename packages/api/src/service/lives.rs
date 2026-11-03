@@ -4,7 +4,7 @@
 //! 새 라이브가 된다(유예 시간 없음). 채널마다 열린 라이브는 최대 하나다.
 
 use super::channels::valid_title;
-use super::{AppService, ServiceError};
+use super::{AppService, ChatEvent, ServiceError};
 use crate::dto::LiveChannel;
 use crate::rules::fallback_title;
 
@@ -100,7 +100,8 @@ impl AppService {
         Ok(rows.into_iter().map(LiveChannel::from).collect())
     }
 
-    /// 진행 중인 라이브 제목 바꾸기. 저장한 제목을 돌려준다.
+    /// 진행 중인 라이브 제목 바꾸기. 저장한 제목을 돌려주고, 그 라이브의 채팅 참여자에게
+    /// [`ChatEvent::LiveTitleChanged`]로 알린다(열려 있는 시청 페이지가 제목을 바로 바꾼다).
     ///
     /// 제목 규칙은 다음 라이브 제목과 같다(앞뒤 공백을 지운 뒤 최대 100자). 비우면 다음 라이브
     /// 제목 없이 시작했을 때처럼 자동 제목("`<채널 이름>`님의 라이브")이 된다(제목 없는 라이브는 없다).
@@ -132,6 +133,12 @@ impl AppService {
         if updated.rows_affected() == 0 {
             return Err(ServiceError::NotLive);
         }
+        self.chat.send(
+            &channel_id,
+            ChatEvent::LiveTitleChanged {
+                title: title.clone(),
+            },
+        );
         Ok(title)
     }
 }

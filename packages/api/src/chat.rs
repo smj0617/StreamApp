@@ -26,6 +26,8 @@ pub enum ChatServerEvent {
     Joined,
     /// 그 채널에 누군가(자기 자신 포함) 보낸 메시지
     Message(ChatMessage),
+    /// 스트리머가 라이브 중에 라이브 제목을 바꿨다. 시청 페이지가 보여 주는 제목을 바꾼다.
+    LiveTitleChanged { title: String },
     /// 라이브가 끝났다. 서버가 곧 연결을 닫는다.
     LiveEnded,
     /// 이 연결이 보낸 메시지가 거절된 사유. 보낸 연결에만 온다.
