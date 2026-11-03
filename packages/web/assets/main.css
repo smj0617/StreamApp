@@ -205,6 +205,16 @@ body {
   color: #d93025;
 }
 
+/* 진행 중인 라이브 제목: 라이브 중일 때만 나타난다 */
+.live-title-card {
+  border-left: 4px solid #e5263b;
+}
+
+.live-title-card h2 .live-badge {
+  font-size: 0.75rem;
+  vertical-align: middle;
+}
+
 /* ---- 홈: 라이브 카드 ---- */
 
 .home h1 {

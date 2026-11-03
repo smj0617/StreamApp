@@ -62,6 +62,8 @@ pub enum ServiceError {
     TitleTooLong,
     #[error("없는 채널입니다")]
     UnknownChannel,
+    #[error("라이브 중이 아닙니다")]
+    NotLive,
 }
 
 fn now_ms() -> i64 {

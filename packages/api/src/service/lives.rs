@@ -3,6 +3,7 @@
 //! 라이브는 송출이 시작될 때 열리고 송출이 끊길 때 닫힌다. 송출이 끊겼다가 다시 붙으면
 //! 새 라이브가 된다(유예 시간 없음). 채널마다 열린 라이브는 최대 하나다.
 
+use super::channels::valid_title;
 use super::{AppService, ServiceError};
 use crate::dto::LiveChannel;
 
@@ -75,6 +76,46 @@ impl AppService {
         .fetch_all(&self.pool)
         .await?;
         Ok(rows.into_iter().map(LiveChannel::from).collect())
+    }
+
+    /// 진행 중인 라이브 제목 바꾸기. 저장한 제목을 돌려준다.
+    ///
+    /// 제목 규칙은 다음 라이브 제목과 같다(앞뒤 공백을 지운 뒤 최대 100자). 비우면 다음 라이브
+    /// 제목 없이 시작했을 때처럼 "`<채널 이름>`님의 라이브"가 된다(제목 없는 라이브는 없다).
+    /// 그 사용자의 채널이 라이브 중이 아니면 [`ServiceError::NotLive`], 없는 사용자면
+    /// [`ServiceError::UnknownUser`].
+    pub async fn change_live_title(
+        &self,
+        user_id: i64,
+        title: &str,
+    ) -> Result<String, ServiceError> {
+        let title = valid_title(title)?;
+        let saved = sqlx::query_scalar::<_, String>(
+            "UPDATE lives
+             SET title = COALESCE(?, (SELECT name || ? FROM channels WHERE id = lives.channel_id))
+             WHERE ended_at_ms IS NULL AND channel_id = (SELECT id FROM channels WHERE user_id = ?)
+             RETURNING title",
+        )
+        .bind(title)
+        .bind(DEFAULT_TITLE_SUFFIX)
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        if let Some(saved) = saved {
+            return Ok(saved);
+        }
+        // 사용자와 채널은 1:1이므로, 채널이 없으면 그런 사용자가 없다.
+        let user_exists = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM channels WHERE user_id = ?)",
+        )
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await?;
+        Err(if user_exists {
+            ServiceError::NotLive
+        } else {
+            ServiceError::UnknownUser
+        })
     }
 }
 

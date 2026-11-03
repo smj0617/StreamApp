@@ -19,7 +19,8 @@ pub struct CreatedUser {
     pub channel_name: String,
 }
 
-/// 내 채널 설정: 스트리머가 자기 채널로 송출할 때 필요한 값과 다음 라이브 제목.
+/// 내 채널 설정: 스트리머가 자기 채널로 송출할 때 필요한 값, 다음 라이브 제목,
+/// 라이브 중이면 진행 중인 라이브의 제목.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct MyChannelSettings {
     pub channel_id: String,
@@ -27,6 +28,8 @@ pub struct MyChannelSettings {
     pub stream_key: String,
     /// 다음 라이브 제목 (NextLiveTitle). 적지 않았으면 `None`
     pub next_live_title: Option<String>,
+    /// 진행 중인 라이브의 제목. 라이브 중이 아니면 `None`
+    pub live_title: Option<String>,
     /// OBS "서버" 칸에 그대로 넣을 값
     pub obs_server: String,
     /// OBS "스트림 키" 칸에 그대로 넣을 값: `<채널ID>?key=<송출 키>`
