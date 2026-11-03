@@ -11,6 +11,8 @@
        RTMP 1935, HLS 8888, Control API 9997을 쓰고, 로그는 .tools\mediamtx.log에 쓴다.
     4. 레포 루트에서 `dx serve --package web --port <Port>`를 실행한다.
        DB 파일은 레포 루트의 data\streamapp.db에 생긴다(지우고 다시 실행하면 초기 상태로 돌아간다).
+       앱은 시작할 때 MediaMTX Control API(STREAMAPP_MEDIAMTX_API, 기본 http://127.0.0.1:9997)로
+       지금 송출 중인 채널을 조회해 라이브를 맞춘다.
        dx serve가 끝나면(Ctrl+C 포함) MediaMTX도 끈다.
 
 .PARAMETER Port
@@ -182,6 +184,11 @@ if ($NoBrowser) {
     $DxArgs += @('--open', 'false')
 }
 
+# 앱은 시작할 때(다시 빌드되어 재시작할 때 포함) 이 주소의 MediaMTX Control API로 지금 송출 중인 채널을
+# 조회해 라이브를 맞춘다. 위에서 띄운 MediaMTX의 apiAddress(:9997)와 같아야 한다. dx serve와 앱에만 넘기고 되돌린다.
+$SavedMtxApiAddress = $env:STREAMAPP_MEDIAMTX_API
+$env:STREAMAPP_MEDIAMTX_API = 'http://127.0.0.1:9997'
+
 $DxExitCode = 1
 Push-Location $RepoRoot
 try {
@@ -190,6 +197,7 @@ try {
 }
 finally {
     Pop-Location
+    $env:STREAMAPP_MEDIAMTX_API = $SavedMtxApiAddress
     if (-not $Mtx.HasExited) {
         Stop-Process -Id $Mtx.Id -Force
     }
