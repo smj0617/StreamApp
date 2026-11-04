@@ -41,3 +41,50 @@ pub async fn user(svc: &AppService, nickname: &str) -> (i64, String) {
     let created = svc.create_user(nickname).await.unwrap();
     (created.user.id, created.channel_id)
 }
+
+/// 테스트가 끝나면(값이 사라지면) 지우는 임시 폴더. 녹화방송 영상 파일을 둔다.
+pub struct TempDir(std::path::PathBuf);
+
+impl TempDir {
+    pub fn new() -> Self {
+        static NEXT: AtomicI64 = AtomicI64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "streamapp-test-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::SeqCst)
+        ));
+        std::fs::create_dir_all(&path).expect("임시 폴더 만들기");
+        Self(path)
+    }
+
+    pub fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+
+    /// 폴더 안의 파일 이름(정렬).
+    pub fn file_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(&self.0)
+            .map(|entries| {
+                entries
+                    .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort();
+        names
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// 가짜 시계를 쓰고 녹화방송 폴더가 임시 폴더인, 새 메모리 DB의 서비스.
+pub async fn service_with_recordings() -> (AppService, FakeClock, TempDir) {
+    let (svc, clock) = service_with_clock().await;
+    let dir = TempDir::new();
+    let svc = svc.with_recordings_dir(dir.path().join("recordings"));
+    (svc, clock, dir)
+}

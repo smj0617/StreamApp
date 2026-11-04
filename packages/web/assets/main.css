@@ -170,6 +170,8 @@ body {
 
 /* 상단 바 메뉴: 로고 바로 옆에 두고 남는 공간은 오른쪽(사용자 메뉴 앞)으로 민다. */
 .topnav {
+  display: flex;
+  gap: 16px;
   margin-right: auto;
 }
 
@@ -501,4 +503,86 @@ body {
 
 .chat-count.over {
   color: #d93025;
+}
+
+/* ---- 녹화방송: 홈 목록, 등록, 상세 ---- */
+
+.recording-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #3d5afe;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* 홈의 두 번째 목록 제목: 오른쪽에 등록 링크를 둔다. */
+.home-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 32px 0 16px;
+}
+
+.home .home-heading h1 {
+  margin: 0;
+}
+
+.heading-action {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.heading-action:hover {
+  text-decoration: underline;
+}
+
+.file-input {
+  display: block;
+  width: 100%;
+  padding: 6px 0;
+  font: inherit;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.primary-button {
+  padding: 8px 18px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary-button:disabled,
+.field-row input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.upload-progress {
+  color: var(--muted);
+}
+
+.watch-title .recording-badge {
+  font-size: 0.75rem;
+}
+
+.watch-channel a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.watch-channel a:hover {
+  text-decoration: underline;
 }
