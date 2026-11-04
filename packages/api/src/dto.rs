@@ -89,3 +89,37 @@ pub struct LiveChannelList {
     /// 서버의 현재 시각(유닉스 밀리초)
     pub server_now_ms: i64,
 }
+
+/// 녹화방송 (Recording) 목록의 한 편: 홈 카드에 보여 줄 값.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct RecordingSummary {
+    pub id: i64,
+    pub title: String,
+    pub channel_name: String,
+    /// 등록한 시각(유닉스 밀리초)
+    pub registered_at_ms: i64,
+}
+
+/// 홈의 녹화방송 목록과, 목록을 만든 서버의 현재 시각(등록 후 지난 시간 계산용, [`LiveChannelList`] 참고).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct RecordingList {
+    /// 최근에 등록한 순서
+    pub recordings: Vec<RecordingSummary>,
+    /// 서버의 현재 시각(유닉스 밀리초)
+    pub server_now_ms: i64,
+}
+
+/// 녹화방송 상세 페이지 정보.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct RecordingPage {
+    pub id: i64,
+    pub title: String,
+    pub channel_id: String,
+    pub channel_name: String,
+    /// `<video>`에 넣을 영상 주소: `<crate::RECORDING_MEDIA_PATH>/<파일 이름>`(앱과 같은 출처)
+    pub video_url: String,
+    /// 등록한 시각(유닉스 밀리초)
+    pub registered_at_ms: i64,
+    /// 정보를 만든 서버의 현재 시각(유닉스 밀리초)
+    pub server_now_ms: i64,
+}

@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 
 mod views;
 
-use views::{Home, NotFound, Settings, Shell, Watch};
+use views::{Home, NewRecording, NotFound, RecordingDetail, Settings, Shell, Watch};
 
 /// 모든 페이지는 `Shell` 레이아웃(상단 바) 안에 그린다.
 /// Dioxus Router의 경로 변수 문법은 `/:param`이다(axum·서버 함수의 `/{param}`과 다르다).
@@ -16,6 +16,11 @@ enum Route {
         Settings {},
         #[route("/live/:channel_id")]
         Watch { channel_id: String },
+        // `/recordings/new`가 `/recordings/:id`보다 먼저 와야 한다.
+        #[route("/recordings/new")]
+        NewRecording {},
+        #[route("/recordings/:id")]
+        RecordingDetail { id: i64 },
         #[route("/:..segments")]
         NotFound { segments: Vec<String> },
 }
@@ -33,6 +38,7 @@ fn main() {
         let service = api::server::init_from_env().await?;
         Ok(dioxus::server::router(App)
             .merge(api::mediamtx::router(service.clone()))
+            .merge(api::recording_files::router(service.clone()))
             .layer(dioxus::server::axum::Extension(service)))
     });
 }

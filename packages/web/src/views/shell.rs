@@ -29,6 +29,7 @@ pub fn Shell() -> Element {
         header { class: "topbar",
             Link { class: "brand", to: Route::Home {}, "StreamApp" }
             nav { class: "topnav",
+                Link { to: Route::NewRecording {}, "녹화방송 등록" }
                 Link { to: Route::Settings {}, "내 채널 설정" }
             }
             UserMenu {}

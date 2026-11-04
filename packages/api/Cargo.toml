@@ -14,12 +14,17 @@ thiserror = { version = "2", optional = true }
 anyhow = { version = "1", optional = true }
 tracing = { version = "0.1", optional = true }
 # MediaMTX 연동 엔드포인트(`mediamtx` 모듈). dioxus가 쓰는 axum 0.8과 같은 크레이트로 합쳐진다.
-axum = { version = "0.8", optional = true }
+axum = { version = "0.8", features = ["multipart"], optional = true }
 form_urlencoded = { version = "1", optional = true }
 # 앱 시작 시 MediaMTX Control API 조회(`server::mediamtx_api`). dioxus-fullstack이 쓰는 reqwest 0.12와 합쳐진다.
 reqwest = { version = "0.12", default-features = false, features = ["json"], optional = true }
 # 채팅: 채널별 broadcast(`service::chat`)와 채팅 WebSocket 어댑터의 `select!`. dioxus 서버가 쓰는 tokio와 합쳐진다.
-tokio = { version = "1", features = ["sync", "macros"], optional = true }
+tokio = { version = "1", features = ["sync", "macros", "fs", "io-util"], optional = true }
+# 녹화방송 영상 파일: 받은 조각을 파일로 쓰고(`service::recordings`), 폴더의 파일을 Range 요청까지 받아 내준다
+# (`recording_files`). 모두 dioxus 서버가 이미 쓰는 크레이트와 합쳐진다.
+tower-http = { version = "0.6", features = ["fs"], optional = true }
+futures-util = { version = "0.3", optional = true }
+bytes = { version = "1", optional = true }
 
 [features]
 # 이름을 바꾸면 안 된다: 서버 함수 매크로가 `feature = "server"`를 전제로 코드를 만든다.
@@ -34,12 +39,17 @@ server = [
     "dep:form_urlencoded",
     "dep:reqwest",
     "dep:tokio",
+    "dep:tower-http",
+    "dep:futures-util",
+    "dep:bytes",
 ]
 
 [dev-dependencies]
 tokio = { version = "1.48", features = ["macros", "rt", "time"] }
 tower = { version = "0.5", features = ["util"] }
 serde_json = "1"
+futures-util = "0.3"
+bytes = "1"
 
 # `server` feature 없이 `cargo test -p api`를 돌리면 건너뛴다.
 [[test]]
@@ -60,4 +70,14 @@ required-features = ["server"]
 [[test]]
 name = "chat"
 path = "tests/chat.rs"
+required-features = ["server"]
+
+[[test]]
+name = "recordings"
+path = "tests/recordings.rs"
+required-features = ["server"]
+
+[[test]]
+name = "recording_http"
+path = "tests/recording_http.rs"
 required-features = ["server"]
