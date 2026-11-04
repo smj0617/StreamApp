@@ -45,7 +45,7 @@ server = [
 ]
 
 [dev-dependencies]
-tokio = { version = "1.48", features = ["macros", "rt", "time"] }
+tokio = { version = "1.48", features = ["macros", "rt", "time", "net"] }
 tower = { version = "0.5", features = ["util"] }
 serde_json = "1"
 futures-util = "0.3"
@@ -80,4 +80,9 @@ required-features = ["server"]
 [[test]]
 name = "recording_http"
 path = "tests/recording_http.rs"
+required-features = ["server"]
+
+[[test]]
+name = "whip_http"
+path = "tests/whip_http.rs"
 required-features = ["server"]

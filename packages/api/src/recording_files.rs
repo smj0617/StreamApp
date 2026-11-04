@@ -14,7 +14,7 @@ use axum::{
 use serde::Serialize;
 use tower_http::services::ServeDir;
 
-use crate::server::{current_user, displayed_reason};
+use crate::server::{current_user, displayed_reason, json_message};
 use crate::service::{AppService, ServiceError};
 use crate::{RECORDING_MEDIA_PATH, RECORDING_UPLOAD_PATH, UPLOAD_FILE_FIELD, UPLOAD_TITLE_FIELD};
 
@@ -98,17 +98,11 @@ fn rejected(error: ServiceError) -> Response {
 }
 
 fn message(status: StatusCode, message: &str) -> Response {
-    (status, Json(Rejection { message })).into_response()
+    json_message(status, message)
 }
 
 /// 올리기 성공 응답 본문.
 #[derive(Serialize)]
 struct Uploaded {
     id: i64,
-}
-
-/// 올리기 거절 응답 본문.
-#[derive(Serialize)]
-struct Rejection<'a> {
-    message: &'a str,
 }

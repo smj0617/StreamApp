@@ -1,3 +1,4 @@
+mod broadcast;
 mod chat;
 mod hls_player;
 mod home;
@@ -7,6 +8,7 @@ mod settings;
 mod shell;
 mod watch;
 
+pub use broadcast::Broadcast;
 pub use home::Home;
 pub use not_found::NotFound;
 pub use recordings::{NewRecording, RecordingDetail};

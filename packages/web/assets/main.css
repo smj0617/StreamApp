@@ -31,6 +31,7 @@ body {
 
 .topbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -171,7 +172,8 @@ body {
 /* 상단 바 메뉴: 로고 바로 옆에 두고 남는 공간은 오른쪽(사용자 메뉴 앞)으로 민다. */
 .topnav {
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 8px 16px;
   margin-right: auto;
 }
 
@@ -585,4 +587,77 @@ body {
 
 .watch-channel a:hover {
   text-decoration: underline;
+}
+
+/* ---- 휴대폰 방송 ---- */
+
+.broadcast {
+  max-width: 720px;
+}
+
+/* 전면 카메라 미리보기는 거울처럼 보여 준다(송출되는 영상은 뒤집지 않는다). */
+.broadcast-preview.mirrored {
+  transform: scaleX(-1);
+}
+
+.broadcast-live-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  font-size: 0.8rem;
+}
+
+.broadcast-status {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.broadcast-status.pending {
+  color: #f5a623;
+}
+
+.broadcast-status.live {
+  color: #e5263b;
+}
+
+.broadcast-actions {
+  flex-wrap: wrap;
+}
+
+.broadcast-actions button:not(.primary-button) {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.primary-button.live {
+  background: #e5263b;
+}
+
+.primary-button.stop {
+  background: #3a3b40;
+}
+
+.field-row .choice {
+  min-width: 72px;
+}
+
+.field-row .choice.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* 좁은 화면(휴대폰): 상단 바가 줄바꿈되어 사용자 메뉴가 왼쪽으로 내려오므로, 펼친 메뉴도 왼쪽에 맞춰 화면 안에 둔다. */
+@media (max-width: 600px) {
+  .user-menu-panel {
+    left: 0;
+    right: auto;
+    max-width: calc(100vw - 32px);
+  }
 }

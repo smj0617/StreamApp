@@ -8,7 +8,7 @@
     2. MediaMTX v1.21.3이 없으면 공식 GitHub 릴리스에서 git에서 제외한 .tools\ 폴더로 내려받는다
        (체크섬을 확인한다).
     3. 레포의 설정(tools\mediamtx\mediamtx.yml)으로 MediaMTX를 실행한다.
-       RTMP 1935, HLS 8888, Control API 9997을 쓰고, 로그는 .tools\mediamtx.log에 쓴다.
+       RTMP 1935, HLS 8888, WebRTC 8889(휴대폰 방송, ICE 8189), Control API 9997을 쓰고, 로그는 .tools\mediamtx.log에 쓴다.
     4. 레포 루트에서 `dx serve --package web --port <Port>`를 실행한다.
        DB 파일은 레포 루트의 data\streamapp.db에 생긴다(지우고 다시 실행하면 초기 상태로 돌아간다).
        앱은 시작할 때 MediaMTX Control API(STREAMAPP_MEDIAMTX_API, 기본 http://127.0.0.1:9997)로
@@ -173,13 +173,13 @@ finally {
 
 Start-Sleep -Seconds 1
 if ($Mtx.HasExited) {
-    Write-Host "MediaMTX가 바로 종료되어 멈춥니다. 포트 1935, 8888, 9997을 다른 프로그램이 쓰고 있지 않은지 확인하세요. 로그($MtxLog):" -ForegroundColor Red
+    Write-Host "MediaMTX가 바로 종료되어 멈춥니다. 포트 1935, 8888, 8889, 8189, 9997을 다른 프로그램이 쓰고 있지 않은지 확인하세요. 로그($MtxLog):" -ForegroundColor Red
     Get-Content -ErrorAction SilentlyContinue -Tail 20 $MtxLog
     exit 1
 }
 # 포트는 mediamtx.yml의 값이다. HLS 8888은 Rust 상수 api::mediamtx::HLS_BASE_URL(시청 페이지의 재생 주소)과,
 # Control API 9997은 api::server::mediamtx_api::DEFAULT_ADDRESS와 같아야 한다.
-Write-Host "MediaMTX $MtxVersion 실행 중(RTMP 1935, HLS 8888, Control API 9997). 로그: $MtxLog" -ForegroundColor Green
+Write-Host "MediaMTX $MtxVersion 실행 중(RTMP 1935, HLS 8888, WebRTC 8889·ICE 8189, Control API 9997). 로그: $MtxLog" -ForegroundColor Green
 Write-Host "  로그 보기: Get-Content -Wait $MtxLog"
 Write-Host "  테스트 송출: .\scripts\test-publish.ps1 -ChannelId <채널 ID> -StreamKey <송출 키>"
 Write-Host "http://127.0.0.1:$Port 에서 앱을 띄웁니다." -ForegroundColor Green

@@ -86,6 +86,20 @@ async fn reconcile_with_mediamtx(service: &AppService) -> Result<(), ServiceErro
     Ok(())
 }
 
+/// axum 어댑터(녹화방송 올리기, 휴대폰 방송 중계)의 거절 응답: 상태 코드와 `{"message": "<사유>"}`.
+pub(crate) fn json_message(
+    status: dioxus::server::axum::http::StatusCode,
+    message: &str,
+) -> dioxus::server::axum::response::Response {
+    use dioxus::server::axum::{response::IntoResponse, Json};
+
+    #[derive(serde::Serialize)]
+    struct Rejection<'a> {
+        message: &'a str,
+    }
+    (status, Json(Rejection { message })).into_response()
+}
+
 /// DB·파일 오류 대신 화면에 보여 줄 문구. 자세한 내용은 로그에만 남긴다.
 const INTERNAL_ERROR: &str = "서버 내부 오류가 발생했습니다";
 
