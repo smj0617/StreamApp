@@ -31,6 +31,9 @@ pub const UNAVAILABLE_HOOK_PATH: &str = "/internal/mediamtx/hooks/unavailable";
 /// `<HLS_BASE_URL>/<채널ID>/index.m3u8`이다(경로 이름이 채널 ID). 시청자는 앱과 같은 PC의 MediaMTX에서
 /// 재생한다. 포트는 `mediamtx.yml`의 `hlsAddress`(`:8888`)와 같아야 한다.
 pub const HLS_BASE_URL: &str = "http://localhost:8888";
+/// 앱이 휴대폰 방송 WHIP 요청을 넘길 MediaMTX WebRTC 서버 주소([`crate::whip`]). 앱과 같은 PC의 MediaMTX다.
+/// 포트는 `mediamtx.yml`의 `webrtcAddress`(`:8889`)와 같아야 한다.
+pub const WEBRTC_BASE_URL: &str = "http://127.0.0.1:8889";
 
 /// MediaMTX 연동 라우터.
 pub fn router(service: AppService) -> Router {
