@@ -29,12 +29,17 @@ pub const DB_PATH_ENV: &str = "STREAMAPP_DB";
 pub const DEFAULT_DB_PATH: &str = "data/streamapp.db";
 /// 녹화방송 영상 파일 폴더를 바꾸는 환경변수. 기본은 [`DEFAULT_RECORDINGS_DIR`](`data/recordings`).
 pub const RECORDINGS_DIR_ENV: &str = "STREAMAPP_RECORDINGS_DIR";
+/// 기본 사용자(빈 DB에 만드는 철수·영희·민수)와, 이전 단계에서 비밀번호 없이 만든 사용자에게 넣을 비밀번호를
+/// 바꾸는 환경변수. 로컬 개발·확인용 시험 값이다.
+pub const DEFAULT_PASSWORD_ENV: &str = "STREAMAPP_DEFAULT_PASSWORD";
+/// 기본 비밀번호(시험 값). 실제로 쓰는 서버라면 [`DEFAULT_PASSWORD_ENV`]로 바꾸거나 기본 사용자를 지운다.
+pub const DEFAULT_PASSWORD: &str = "test1234";
 
 /// 서버 함수가 앱 서비스를 꺼내는 추출자. `main`에서 `.layer(Extension(service))`로 붙인다.
 pub type Service = dioxus::server::axum::Extension<AppService>;
 
 /// 앱 시작 준비: DB 연결, 마이그레이션 적용, 녹화방송 폴더 준비, (사용자가 없으면) 기본 데이터 생성,
-/// MediaMTX의 실제 송출에 라이브 맞추기.
+/// 비밀번호 없는 이전 단계 사용자에게 기본 비밀번호 넣기, MediaMTX의 실제 송출에 라이브 맞추기.
 pub async fn init_from_env() -> anyhow::Result<AppService> {
     let path = std::env::var_os(DB_PATH_ENV)
         .map(PathBuf::from)
@@ -49,8 +54,18 @@ pub async fn init_from_env() -> anyhow::Result<AppService> {
     tracing::info!("녹화방송 폴더: {}", recordings_dir.display());
 
     let service = AppService::new(pool).with_recordings_dir(recordings_dir);
-    if service.seed_default_users().await? {
-        tracing::info!("DB가 비어 있어 기본 사용자 3명과 채널을 만들었습니다");
+    let default_password =
+        std::env::var(DEFAULT_PASSWORD_ENV).unwrap_or_else(|_| DEFAULT_PASSWORD.to_owned());
+    if service.seed_default_users(&default_password).await? {
+        tracing::info!(
+            "DB가 비어 있어 기본 사용자 3명과 채널을 만들었습니다(비밀번호는 {DEFAULT_PASSWORD_ENV} 또는 기본값)"
+        );
+    }
+    let filled = service.fill_missing_passwords(&default_password).await?;
+    if filled > 0 {
+        tracing::warn!(
+            "비밀번호 없이 만든 이전 단계 사용자 {filled}명에게 기본 비밀번호를 넣었습니다"
+        );
     }
     reconcile_with_mediamtx(&service).await?;
     Ok(service)
@@ -117,8 +132,9 @@ pub(crate) fn displayed_reason(error: ServiceError) -> String {
 
 impl From<ServiceError> for ServerFnError {
     fn from(error: ServiceError) -> Self {
-        // DB·파일 오류는 서버 잘못(500)이고, 나머지는 규칙 위반(400)이라 사유를 화면에 그대로 보여 준다.
-        let code = if error.is_internal() { 500 } else { 400 };
+        // 서버 잘못(500) 말고는 사유를 화면에 그대로 보여 준다. 로그인 필요 401, 주인·작성자가 아님 403,
+        // 없는 대상 404, 나머지 규칙 위반 400.
+        let code = error.status_code();
         ServerFnError::ServerError {
             message: displayed_reason(error),
             code,

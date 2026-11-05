@@ -2,7 +2,9 @@ use dioxus::prelude::*;
 
 mod views;
 
-use views::{Broadcast, Home, NewRecording, NotFound, RecordingDetail, Settings, Shell, Watch};
+use views::{
+    Broadcast, Home, Login, NewRecording, NotFound, RecordingDetail, Settings, Shell, SignUp, Watch,
+};
 
 /// 모든 페이지는 `Shell` 레이아웃(상단 바) 안에 그린다.
 /// Dioxus Router의 경로 변수 문법은 `/:param`이다(axum·서버 함수의 `/{param}`과 다르다).
@@ -12,6 +14,10 @@ enum Route {
     #[layout(Shell)]
         #[route("/")]
         Home {},
+        #[route("/login")]
+        Login {},
+        #[route("/signup")]
+        SignUp {},
         #[route("/settings")]
         Settings {},
         #[route("/broadcast")]

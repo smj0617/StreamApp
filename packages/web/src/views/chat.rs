@@ -29,7 +29,7 @@ pub fn Chat(channel_id: String, ended: Signal<bool>, live_title: Signal<String>)
     use_effect(move || mounted.set(true));
 
     let user_id = current.read().as_ref().map(|user| user.id);
-    // 보낸 사람은 연결할 때 쿠키에 있던 사용자다. 사용자가 바뀌면 key가 바뀌어 연결을 새로 맺는다.
+    // 보낸 사람은 연결할 때 세션 쿠키로 로그인해 있던 사용자다. 로그인·로그아웃하면 key가 바뀌어 연결을 새로 맺는다.
     let connection_key = match user_id {
         Some(id) => format!("user-{id}"),
         None => "viewer".to_string(),
@@ -142,7 +142,7 @@ fn ChatConnection(
     let placeholder = if lost() {
         "채팅 연결이 끊겼습니다. 새로고침해 주세요"
     } else if !can_send {
-        "사용자를 고르면 채팅할 수 있습니다"
+        "로그인하면 채팅할 수 있습니다"
     } else if !joined() {
         "채팅에 연결하는 중입니다"
     } else {
@@ -178,7 +178,7 @@ fn ChatConnection(
             }
             if !can_send {
                 p { class: "chat-guide muted small",
-                    "상단 오른쪽 사용자 메뉴에서 사용자를 고르거나 새로 만들면 채팅을 보낼 수 있습니다. 지금은 시청만 가능합니다."
+                    "로그인하면 채팅을 보낼 수 있습니다. 지금은 시청만 가능합니다."
                 }
             } else if usable {
                 p { class: "{count_class}", "{length}/{MAX_CHAT_CHARS}" }

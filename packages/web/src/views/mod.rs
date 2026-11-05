@@ -1,5 +1,7 @@
+mod auth;
 mod broadcast;
 mod chat;
+mod comments;
 mod hls_player;
 mod home;
 mod not_found;
@@ -8,6 +10,7 @@ mod settings;
 mod shell;
 mod watch;
 
+pub use auth::{Login, SignUp};
 pub use broadcast::Broadcast;
 pub use home::Home;
 pub use not_found::NotFound;

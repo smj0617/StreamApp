@@ -62,6 +62,8 @@ pub struct WatchPage {
 /// 채널에서 지금 열려 있는(송출 중인) 라이브.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct OpenLive {
+    /// 라이브 ID. 라이브 댓글([`CommentTarget::Live`])을 이 ID로 단다.
+    pub id: i64,
     pub title: String,
     /// 라이브가 열린 시각(유닉스 밀리초)
     pub started_at_ms: i64,
@@ -115,11 +117,45 @@ pub struct RecordingPage {
     pub id: i64,
     pub title: String,
     pub channel_id: String,
+    /// 녹화방송 주인(채널 주인)의 사용자 ID. 화면은 주인에게만 수정·삭제 버튼을 보이고, 권한은 서버가 다시 확인한다.
+    pub owner_id: i64,
     pub channel_name: String,
     /// `<video>`에 넣을 영상 주소: `<crate::RECORDING_MEDIA_PATH>/<파일 이름>`(앱과 같은 출처)
     pub video_url: String,
     /// 등록한 시각(유닉스 밀리초)
     pub registered_at_ms: i64,
     /// 정보를 만든 서버의 현재 시각(유닉스 밀리초)
+    pub server_now_ms: i64,
+}
+
+/// 댓글을 다는 방송: 녹화방송 하나 또는 라이브 한 회차.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CommentTarget {
+    /// 녹화방송 ID
+    Recording(i64),
+    /// 라이브 ID([`OpenLive::id`])
+    Live(i64),
+}
+
+/// 댓글 (Comment) 하나.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Comment {
+    pub id: i64,
+    /// 쓴 사용자의 ID. 화면은 작성자에게만 수정·삭제 버튼을 보이고, 권한은 서버가 다시 확인한다.
+    pub author_id: i64,
+    pub author_nickname: String,
+    /// 앞뒤 공백을 지운 내용
+    pub content: String,
+    /// 쓴 시각(유닉스 밀리초)
+    pub created_at_ms: i64,
+    /// 고친 적이 있는지
+    pub edited: bool,
+}
+
+/// 방송 하나의 댓글 목록(오래된 순)과, 목록을 만든 서버의 현재 시각(쓴 뒤 지난 시간 계산용).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct CommentList {
+    pub comments: Vec<Comment>,
+    /// 서버의 현재 시각(유닉스 밀리초)
     pub server_now_ms: i64,
 }

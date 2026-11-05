@@ -73,9 +73,78 @@ PC만으로 미리 확인하려면 PC 브라우저에서 `http://localhost:8090/
 
 자동 테스트: [tests/whip_http.rs](packages/api/tests/whip_http.rs)가 가짜 MediaMTX를 띄우고 확인한다. 송출 시작 요청이 현재 사용자 채널과 송출 키를 붙여 넘어가는지, 응답의 세션 주소에서 송출 키가 빠지는지, 종료 요청, 사용자 없음·SDP 아님·이미 라이브 중(409)·MediaMTX 거절(409)·MediaMTX 꺼짐(502)·잘못된 세션을 본다. 송출 키 확인과 라이브 시작·종료는 [tests/mediamtx_http.rs](packages/api/tests/mediamtx_http.rs)·[tests/service.rs](packages/api/tests/service.rs)가 확인한다.
 
-## 현황 (2026-11-04)
+### ③ 인증·인가와 댓글
 
-### 과제 ②: 휴대폰 라이브 송출 — 구현
+이 단계부터 ①·②의 "상단 메뉴에서 닉네임으로 사용자 고르기"는 회원가입·로그인으로 바뀌었다. 녹화방송 등록·재생, 휴대폰 송출·시청 기능은 그대로이고, 로그인한 사용자 기준으로 동작한다.
+
+**구현 범위**
+
+- **회원가입·로그인·로그아웃** `/signup`, `/login`, 상단 오른쪽 "로그아웃": 닉네임(2~10자 한글·영문·숫자)과 비밀번호(8~64자)로 가입하면 같은 이름의 채널이 생기고 곧바로 로그인된다. 비밀번호는 Argon2id 해시로만 저장한다. 로그인하면 서버가 무작위 세션 토큰을 `streamapp_session` 쿠키(HttpOnly, SameSite=Lax, 30일)로 주고, DB `sessions`에는 토큰의 SHA-256만 남긴다. 요청마다 서버가 이 토큰으로 사용자를 찾는다(쿠키를 고쳐 다른 사람이 될 수 없다). 로그아웃하면 DB의 세션과 쿠키를 모두 지운다. 로그인 실패는 닉네임이 없든 비밀번호가 틀리든 "닉네임 또는 비밀번호가 맞지 않습니다"(401)다. 결정 근거는 [ADR 0005](docs/adr/0005-password-login-with-db-sessions.md).
+  - 코드: 세션 동작 [service/auth.rs](packages/api/src/service/auth.rs), 쿠키 읽기·쓰기 [server/current_user.rs](packages/api/src/server/current_user.rs), 서버 함수 [users.rs](packages/api/src/users.rs), 화면 [views/auth.rs](packages/web/src/views/auth.rs), 마이그레이션 [0004](packages/api/migrations/0004_auth_and_comments.sql).
+- **방송 소유자와 서버 권한 검사**: 채널 주인 = 방송 주인이다(사용자 1명 = 채널 1개). 화면에서 버튼을 숨기는 것과 별개로 서버가 모든 요청을 다시 확인한다. 로그인하지 않았으면 401, 주인이 아니면 403, 없는 대상이면 404다.
+
+  | 동작 | 주소 | 비로그인 | 다른 사용자 | 주인 |
+  | --- | --- | --- | --- | --- |
+  | 녹화방송 등록 | `POST /api/recordings/upload` | 401 | (자기 채널에 등록) | 201 |
+  | 녹화방송 제목 수정 | `POST /api/recordings/rename` | 401 | 403 | 200 |
+  | 녹화방송 삭제(영상 파일·댓글 포함) | `POST /api/recordings/delete` | 401 | 403 | 200 |
+  | 휴대폰 송출 시작 | `POST /api/broadcast/whip` | 401 | (자기 채널로 송출) | 201 |
+  | 휴대폰 송출 종료 | `DELETE /api/broadcast/whip/<세션>` | 401 | 403 | 200 |
+  | 내 채널 설정·송출 키 조회 | `GET /api/my-channel` | 401 | (자기 채널만) | 200 |
+  | 다음 라이브 제목·진행 중인 라이브 제목 수정 | `POST /api/my-channel/next-live-title`, `/live-title` | 401 | (자기 채널만) | 200 |
+
+  - 녹화방송 수정·삭제는 앱 서비스가 녹화방송 채널의 주인인지 확인한다([service/recordings.rs](packages/api/src/service/recordings.rs)의 `check_recording_owner`). 다른 사용자가 빈 제목을 보내도 제목 규칙보다 주인 확인이 먼저라 403이다.
+  - 휴대폰 송출: 앱이 시작한 송출 세션마다 어느 채널의 것인지 기억해 두고, 종료 요청이 다른 채널 주인의 것이면 MediaMTX로 넘기지 않고 403으로 거절한다([whip.rs](packages/api/src/whip.rs)). 송출 시작은 로그인한 사용자 자기 채널로만 되므로 남의 채널로 송출할 방법이 없다. OBS 송출은 채널 주인만 볼 수 있는 송출 키로 MediaMTX가 앱에 확인한다(②와 같다).
+  - 채널 설정·라이브 제목은 언제나 로그인한 사용자 자신의 채널만 다루는 주소라서 남의 채널에 닿을 수 없다.
+- **댓글**: 녹화방송 상세 `/recordings/<번호>`와 라이브 시청 페이지 `/live/<채널ID>` 아래에 방송별 댓글이 있다. 라이브 댓글은 그 라이브 회차에 붙어 라이브가 끝나도 DB에 남는다(채팅은 ②처럼 저장하지 않는다). 내용은 1~500자.
+  - 쓰기 `POST /api/comments`: 로그인한 사용자가 작성자로 저장된다. 비로그인은 서버가 401로 거절한다.
+  - 수정 `POST /api/comments/edit`·삭제 `POST /api/comments/delete`: 작성자만 할 수 있다. 다른 사용자(녹화방송 주인 포함)는 403이다. 화면에는 자기 댓글에만 "수정"·"삭제"가 보인다.
+  - 목록 `GET /api/recordings/<번호>/comments`, `GET /api/lives/<라이브ID>/comments`: 오래된 순, 작성자 닉네임·작성 시각·수정 여부.
+  - 코드: [service/comments.rs](packages/api/src/service/comments.rs), 서버 함수 [comments.rs](packages/api/src/comments.rs), 화면 [views/comments.rs](packages/web/src/views/comments.rs).
+- **공개 범위**: 로그인하지 않아도 할 수 있는 것은 홈의 라이브·녹화방송 목록, 라이브 시청(HLS), 녹화방송 재생(`/media/recordings/…`), 채팅 읽기, 댓글 읽기다. 방송 서비스라 시청은 누구에게나 열어 두었다. 로그인해야 하는 것은 녹화방송 등록·수정·삭제, 휴대폰 송출, 내 채널 설정(송출 키), 채팅 보내기, 댓글 쓰기·수정·삭제다.
+- **이전 단계 사용자**: 비밀번호 없이 만든 사용자에게는 앱이 시작할 때 기본 비밀번호(`STREAMAPP_DEFAULT_PASSWORD`, 기본값 `test1234`)를 넣는다. 빈 DB에 미리 만드는 철수·영희·민수도 같은 비밀번호다. 로컬 확인용 시험 값이다.
+- 이번 단계에서 하지 않은 것: 비밀번호 변경·재설정, 로그인 시도 횟수 제한, 회원 탈퇴, 관리자 권한, 방송 주인의 남의 댓글 지우기, 댓글 실시간 갱신(새로고침하면 보인다).
+
+**직접 확인 절차(비로그인 / 방송 소유자 / 다른 사용자)**
+
+준비: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 -Port 8090`로 띄우고 `http://localhost:8090`을 연다. 기본 사용자 철수·영희의 비밀번호는 `test1234`다. 서로 다른 사용자를 동시에 쓰려면 일반 창과 시크릿 창을 함께 쓰거나, 한 창에서 로그아웃·로그인을 바꿔 가며 한다.
+
+1. **회원가입·로그인·로그아웃**: "회원가입"에서 새 닉네임과 비밀번호 7자를 넣으면 "비밀번호는 8~64자여야 합니다"로 거절된다. 8자 이상으로 가입하면 홈으로 가고 상단 오른쪽에 닉네임과 "로그아웃"이 보인다. "로그아웃" 후 "로그인"에서 틀린 비밀번호를 넣으면 "닉네임 또는 비밀번호가 맞지 않습니다"가 보이고, 맞게 넣으면 로그인된다. 개발자 도구 → Application → Cookies에서 `streamapp_session`이 HttpOnly인지 볼 수 있다.
+2. **소유자로 녹화방송 등록**: 철수로 로그인해 "녹화방송 등록"에서 영상을 올린다(①의 3~5번). 상세 페이지에 "녹화방송 관리"(제목 저장, 녹화방송 삭제)가 보인다. 제목을 바꾸면 바로 반영된다.
+3. **비로그인 확인**: 로그아웃한 창(또는 시크릿 창)에서 같은 상세 페이지를 연다. 영상과 댓글은 보이지만 관리 칸이 없고, 댓글 칸에는 "로그인이 필요합니다"가 보인다. "녹화방송 등록"·"휴대폰 방송"·"내 채널 설정"도 로그인 안내만 보인다. 버튼 숨기기가 아니라 서버가 거절하는지 보려면 그 창의 개발자 도구 콘솔에서 아래를 실행한다. 모두 `401 로그인이 필요합니다`가 나온다.
+
+   ```js
+   const post = async (url, body) => { const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); return r.status + " " + ((await r.json()).data?.ServerError?.message ?? ""); };
+   await post("/api/comments", { target: { Recording: 1 }, content: "비로그인 댓글" });
+   await post("/api/recordings/rename", { id: 1, title: "바꿈" });
+   await post("/api/recordings/delete", { id: 1 });
+   ```
+
+4. **다른 사용자 확인**: 영희로 로그인해 철수의 녹화방송 상세를 연다. 관리 칸이 없다. 콘솔에서 3번 코드(`post` 정의와 `rename`·`delete` 줄)를 실행하면 `403 방송 주인만 할 수 있습니다`가 나오고, 새로고침해도 제목과 영상이 그대로다. 없는 번호(`id: 999`)는 `404 없는 녹화방송입니다`다.
+5. **댓글**: 영희로 댓글을 쓰면 목록에 "영희 · 방금 전"으로 붙고, 자기 댓글에만 "수정"·"삭제"가 보인다. 고치면 "수정됨"이 붙는다. 철수(녹화방송 주인)로 바꿔 로그인하면 영희 댓글에 버튼이 없고, 콘솔에서 아래를 실행하면 둘 다 `403 댓글을 쓴 사람만 고치거나 지울 수 있습니다`다.
+
+   ```js
+   const id = (await (await fetch("/api/recordings/1/comments")).json()).comments[0].id;
+   await post("/api/comments/edit", { id, content: "남의 댓글 고치기" });
+   await post("/api/comments/delete", { id });
+   ```
+
+6. **송출 제어**: 철수로 로그인해 "휴대폰 방송"에서 방송을 시작·종료한다(②의 절차). 로그아웃한 창에서는 "휴대폰 방송"이 로그인 안내만 보이고, 송출 시작 요청은 서버가 401로 거절한다. 라이브 중에 시청 페이지 아래 댓글 칸에 로그인한 사용자가 댓글을 남길 수 있고, 라이브가 끝난 뒤에도 그 댓글은 DB에 남는다.
+7. **삭제**: 철수로 녹화방송 상세의 "녹화방송 삭제" → "삭제"를 누르면 홈으로 가고, 목록에서 사라지며 그 주소는 "녹화방송을 찾을 수 없습니다"가 된다(영상 파일과 댓글도 지워진다).
+8. **이전 단계 기능**: 홈 목록, 녹화방송 재생(건너뛰기), 라이브 시청·채팅이 로그인하지 않아도 그대로 된다.
+
+자동 테스트: 회원가입·로그인·세션(만료·로그아웃 포함)은 [tests/auth.rs](packages/api/tests/auth.rs), 녹화방송 주인 권한은 [tests/recordings.rs](packages/api/tests/recordings.rs) 끝부분, 댓글과 작성자 권한은 [tests/comments.rs](packages/api/tests/comments.rs), 세션 쿠키 없는 올리기(401)는 [tests/recording_http.rs](packages/api/tests/recording_http.rs), 송출 시작·종료의 401·403·404는 [tests/whip_http.rs](packages/api/tests/whip_http.rs)가 확인한다.
+
+## 현황 (2026-11-05)
+
+### 과제 ③: 인증·인가와 댓글 — 구현
+
+- 자동 테스트 152개 통과(로그인·세션 13개, 댓글 10개, 녹화방송 주인 권한 9개, 송출 종료 권한·세션 쿠키 HTTP 테스트 추가), clippy·fmt·wasm 빌드 통과.
+- 브라우저에서 확인(이전 단계 DB 복사본으로): 앱 시작 때 이전 사용자 3명에 기본 비밀번호 채우기 → 비로그인 댓글·제목 수정·삭제·내 채널 조회 401 → 틀린 비밀번호 거절 → 영희 로그인 → 철수 녹화방송에 관리 칸 없음, 제목 수정·삭제 요청 403, 없는 번호 404 → 영희 댓글 쓰기 → 로그아웃 → 새 사용자 회원가입(자동 로그인) → 영희 댓글 수정·삭제 403 → 철수 로그인 → 관리 칸에서 제목 수정 → 시험 송출 라이브 시청 페이지에서 라이브 댓글 쓰기·표시.
+- 확인하지 못한 것: 화면에서 녹화방송 삭제 버튼 누르기(서비스 테스트로만 확인), 실제 휴대폰으로 로그인 후 송출(WHIP 중계는 HTTP 테스트로 확인), 댓글 수정 화면 저장 버튼.
+
+
+### 과제 ②: 휴대폰 라이브 송출 — 완료 (2026-11-04)
 
 - 자동 테스트 117개 통과(휴대폰 방송 중계 8개 추가), clippy·fmt·wasm 빌드 통과.
 - 실제 휴대폰(같은 와이파이, cloudflared 터널)으로 방송 시작 → PC 시청 페이지에서 세로 720×1280 영상·소리 재생 → 방송 종료까지 확인했다. 방송 중 전면·후면 카메라 바꾸기(연결 유지)는 PC에서 가상 카메라로 확인했다.
@@ -120,9 +189,9 @@ PC만으로 미리 확인하려면 PC 브라우저에서 `http://localhost:8090/
 ```text
 packages/
 ├── api/                 # 서버 함수, 앱 서비스(Dioxus 비의존), MediaMTX 연동·녹화방송 파일·휴대폰 방송 중계 axum Router
-│   ├── migrations/      # 0001 사용자·채널, 0002 라이브, 0003 녹화방송 (기존 파일은 수정하지 말고 새 번호로 추가)
+│   ├── migrations/      # 0001 사용자·채널, 0002 라이브, 0003 녹화방송, 0004 비밀번호·세션·댓글 (기존 파일은 수정하지 말고 새 번호로 추가)
 │   └── tests/           # 앱 서비스(메모리 SQLite), MediaMTX 연동·녹화방송 파일·휴대폰 방송 중계 HTTP 테스트
-└── web/                 # 화면: 홈, 시청 페이지, 휴대폰 방송, 녹화방송 등록·상세, 내 채널 설정, 사용자 메뉴
+└── web/                 # 화면: 홈, 시청 페이지, 휴대폰 방송, 녹화방송 등록·상세(관리·댓글), 내 채널 설정, 로그인·회원가입
 scripts/                 # dev.ps1, test-publish.ps1
 tools/mediamtx/          # MediaMTX v1.21.3 설정 (실행 파일은 dev.ps1이 .tools\로 내려받음)
 ```
@@ -136,7 +205,7 @@ tools/mediamtx/          # MediaMTX v1.21.3 설정 (실행 파일은 dev.ps1이 
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 -Port 8090
 ```
 
-- 브라우저에서 `http://localhost:<포트>`를 연다. 오른쪽 위 메뉴에서 사용자를 고른다(빈 DB면 철수·영희·민수가 미리 만들어진다).
+- 브라우저에서 `http://localhost:<포트>`를 연다. 오른쪽 위 "로그인"으로 로그인하거나 "회원가입"한다(빈 DB면 철수·영희·민수가 비밀번호 `test1234`로 미리 만들어진다).
 - **휴대폰 송출**: 위 "② 인증·인가 없는 휴대폰 라이브 송출"의 접속 환경과 절차를 따른다.
 - **OBS 송출**: 내 채널 설정의 "서버"·"스트림 키" 값을 OBS의 설정 → 방송 → 서비스 "사용자 지정"에 넣고 방송을 시작한다. OBS 없이 테스트하려면:
 
@@ -144,17 +213,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 -Port 8090
   .\scripts\test-publish.ps1 -ChannelId <채널 ID> -StreamKey <송출 키>
   ```
 
-- **두 사용자로 채팅 확인**: 사용자 선택은 쿠키라서, 한 브라우저에서는 `localhost`와 `127.0.0.1`로 주소를 나눠 열면 서로 다른 사용자가 된다.
+- **두 사용자로 확인**: 로그인 세션은 쿠키라서, 일반 창과 시크릿 창을 함께 쓰거나 한 브라우저에서 `localhost`와 `127.0.0.1`로 주소를 나눠 열면 서로 다른 사용자로 로그인할 수 있다.
 - **초기화**: 앱을 끄고 `data/` 폴더(`streamapp.db`와 `recordings/`)를 지우면 기본 사용자 3명만 있는 상태로 돌아간다.
 
 ### 환경변수
 
-모두 선택 사항이며, 비밀 값은 없다. 정하지 않으면 아래 기본값을 쓴다(경로는 앱을 실행한 폴더 기준, `dev.ps1`은 레포 루트).
+모두 선택 사항이다. 정하지 않으면 아래 기본값을 쓴다(경로는 앱을 실행한 폴더 기준, `dev.ps1`은 레포 루트). 세션 서명 키 같은 비밀 값은 필요 없다(세션은 DB에 둔다). 기본 비밀번호는 로컬 확인용 시험 값이며, 실제 비밀번호를 여기에 적어 커밋하지 않는다.
 
 ```powershell
 $env:STREAMAPP_DB = "data/streamapp.db"                  # SQLite DB 파일
 $env:STREAMAPP_RECORDINGS_DIR = "data/recordings"        # 녹화방송 영상 파일 폴더
 $env:STREAMAPP_MEDIAMTX_API = "http://127.0.0.1:9997"    # MediaMTX Control API(앱 시작 시 송출 상태 맞추기)
+$env:STREAMAPP_DEFAULT_PASSWORD = "test1234"             # 빈 DB의 기본 사용자와 이전 단계(비밀번호 없는) 사용자에게 넣을 시험용 비밀번호(8~64자)
 ```
 
 ## 테스트

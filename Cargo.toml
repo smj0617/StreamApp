@@ -11,3 +11,9 @@ edition = "2021"
 dioxus = { version = "=0.7.10" }
 api = { path = "packages/api" }
 serde = { version = "1", features = ["derive"] }
+
+# 비밀번호 해시(Argon2)는 최적화 없이 돌리면 한 번에 1초 넘게 걸려 개발 실행과 테스트가 느려진다.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

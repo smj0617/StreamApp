@@ -3,7 +3,7 @@ use api::dto::MyChannelSettings;
 use api::rules::{fallback_title, MAX_TITLE_CHARS};
 use dioxus::prelude::*;
 
-use super::shell::{rejection_reason, CurrentUser};
+use super::shell::{rejection_reason, CurrentUser, LoginRequired};
 
 /// 내 채널 설정: OBS에 넣을 값을 복사하고 다음 라이브 제목을 적어 둔다.
 /// 라이브 중이면 진행 중인 라이브의 제목도 바꿀 수 있다.
@@ -17,9 +17,9 @@ pub fn Settings() -> Element {
             h1 { "내 채널 설정" }
             match user {
                 None => rsx! {
-                    ChooseUserFirst {}
+                    LoginRequired { what: "내 채널 설정(송출 키 포함)이 보입니다." }
                 },
-                // 사용자를 바꾸면 key가 바뀌어 폼을 다시 마운트하고 새 사용자의 설정을 불러온다.
+                // 로그인한 사용자를 바꾸면 key가 바뀌어 폼을 다시 마운트하고 새 사용자의 설정을 불러온다.
                 Some(user) => rsx! {
                     SuspenseBoundary {
                         fallback: |_| rsx! {
@@ -29,16 +29,6 @@ pub fn Settings() -> Element {
                     }
                 },
             }
-        }
-    }
-}
-
-#[component]
-fn ChooseUserFirst() -> Element {
-    rsx! {
-        p { class: "notice",
-            "사용자를 먼저 골라 주세요. 상단 오른쪽 사용자 메뉴(\"시청만 가능\")를 눌러 고르거나 새 닉네임으로 만들면 "
-            "그 사용자의 채널 설정이 보입니다."
         }
     }
 }
@@ -66,9 +56,9 @@ fn ChannelSettingsForm(nickname: String) -> Element {
                 nickname,
             }
         },
-        // 쿠키의 사용자가 DB에 없다(예: DB 파일을 지운 뒤).
+        // 로그인한 사용자의 채널이 없다(예: DB 파일을 지운 뒤).
         Some(Ok(None)) => rsx! {
-            ChooseUserFirst {}
+            LoginRequired { what: "내 채널 설정(송출 키 포함)이 보입니다." }
         },
         Some(Err(error)) => {
             let reason = rejection_reason(error);

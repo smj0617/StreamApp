@@ -1,4 +1,4 @@
-//! 녹화방송(Recording) 동작: 등록(영상 파일 저장 포함), 목록, 상세.
+//! 녹화방송(Recording) 동작: 등록(영상 파일 저장 포함), 목록, 상세, 제목 수정·삭제(주인만).
 //!
 //! 영상 파일은 녹화방송 폴더에 무작위 이름으로 저장하고, DB에는 제목과 함께 그 파일 이름(영상 위치)을
 //! 남긴다(ADR 0003). 등록이 어느 단계에서 실패하든 폴더에 쓰다 만 파일을 남기지 않는다.
@@ -35,6 +35,7 @@ struct RecordingPageRow {
     id: i64,
     title: String,
     channel_id: String,
+    owner_id: i64,
     channel_name: String,
     file_name: String,
     registered_at_ms: i64,
@@ -160,7 +161,8 @@ impl AppService {
     pub async fn recording_page(&self, id: i64) -> Result<Option<RecordingPage>, ServiceError> {
         let row = sqlx::query_as::<_, RecordingPageRow>(
             "SELECT recordings.id, recordings.title, channels.id AS channel_id,
-                    channels.name AS channel_name, recordings.file_name, recordings.registered_at_ms
+                    channels.user_id AS owner_id, channels.name AS channel_name,
+                    recordings.file_name, recordings.registered_at_ms
              FROM recordings JOIN channels ON channels.id = recordings.channel_id
              WHERE recordings.id = ?",
         )
@@ -171,6 +173,7 @@ impl AppService {
             id: row.id,
             title: row.title,
             channel_id: row.channel_id,
+            owner_id: row.owner_id,
             channel_name: row.channel_name,
             video_url: format!("{RECORDING_MEDIA_PATH}/{}", row.file_name),
             registered_at_ms: row.registered_at_ms,
@@ -179,14 +182,84 @@ impl AppService {
     }
 }
 
-/// 실패한 등록의 파일을 지운다. 지우지 못해도 등록 실패 사유를 바꾸지 않고 로그만 남긴다.
+impl AppService {
+    /// 녹화방송 제목 바꾸기(주인만). 저장한 제목(앞뒤 공백을 지운 것)을 돌려준다.
+    ///
+    /// 거절: 없는 녹화방송이면 [`ServiceError::UnknownRecording`], 그 녹화방송 채널의 주인이 아니면
+    /// [`ServiceError::NotBroadcastOwner`], 제목이 비었거나 100자를 넘으면 등록 때와 같은 사유.
+    pub async fn rename_recording(
+        &self,
+        user_id: i64,
+        recording_id: i64,
+        title: &str,
+    ) -> Result<String, ServiceError> {
+        self.check_recording_owner(user_id, recording_id).await?;
+        let title = valid_title(title)?.ok_or(ServiceError::RecordingTitleEmpty)?;
+        sqlx::query("UPDATE recordings SET title = ? WHERE id = ?")
+            .bind(title)
+            .bind(recording_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(title.to_owned())
+    }
+
+    /// 녹화방송 삭제(주인만): 녹화방송, 그 댓글, 영상 파일을 지운다.
+    ///
+    /// 거절: 없는 녹화방송이면 [`ServiceError::UnknownRecording`], 주인이 아니면
+    /// [`ServiceError::NotBroadcastOwner`]. 영상 파일을 지우지 못하면 녹화방송은 지우고 로그만 남긴다.
+    pub async fn delete_recording(
+        &self,
+        user_id: i64,
+        recording_id: i64,
+    ) -> Result<(), ServiceError> {
+        self.check_recording_owner(user_id, recording_id).await?;
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM comments WHERE recording_id = ?")
+            .bind(recording_id)
+            .execute(&mut *tx)
+            .await?;
+        let file_name = sqlx::query_scalar::<_, String>(
+            "DELETE FROM recordings WHERE id = ? RETURNING file_name",
+        )
+        .bind(recording_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        // 확인과 삭제 사이에 다른 요청이 먼저 지웠다.
+        .ok_or(ServiceError::UnknownRecording)?;
+        tx.commit().await?;
+        remove_quietly(&self.recordings_dir.join(file_name)).await;
+        Ok(())
+    }
+
+    /// 그 사용자가 녹화방송 채널의 주인인지 확인한다. 녹화방송이 없으면 [`ServiceError::UnknownRecording`],
+    /// 주인이 아니면 [`ServiceError::NotBroadcastOwner`].
+    async fn check_recording_owner(
+        &self,
+        user_id: i64,
+        recording_id: i64,
+    ) -> Result<(), ServiceError> {
+        let owner_id = sqlx::query_scalar::<_, i64>(
+            "SELECT channels.user_id
+             FROM recordings JOIN channels ON channels.id = recordings.channel_id
+             WHERE recordings.id = ?",
+        )
+        .bind(recording_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or(ServiceError::UnknownRecording)?;
+        if owner_id == user_id {
+            Ok(())
+        } else {
+            Err(ServiceError::NotBroadcastOwner)
+        }
+    }
+}
+
+/// 실패한 등록의 파일이나 지운 녹화방송의 파일을 지운다. 지우지 못해도 결과를 바꾸지 않고 로그만 남긴다.
 async fn remove_quietly(path: &Path) {
     if let Err(error) = tokio::fs::remove_file(path).await {
         if error.kind() != std::io::ErrorKind::NotFound {
-            tracing::warn!(
-                "등록하지 못한 영상 파일을 지우지 못했습니다({}): {error}",
-                path.display()
-            );
+            tracing::warn!("영상 파일을 지우지 못했습니다({}): {error}", path.display());
         }
     }
 }

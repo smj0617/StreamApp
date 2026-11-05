@@ -9,6 +9,7 @@ struct WatchPageRow {
     channel_id: String,
     channel_name: String,
     /// 열린 라이브가 없으면 `NULL`
+    live_id: Option<i64>,
     title: Option<String>,
     started_at_ms: Option<i64>,
 }
@@ -20,7 +21,7 @@ impl AppService {
         // 채널마다 열린 라이브는 최대 하나다(부분 유일 인덱스).
         let row = sqlx::query_as::<_, WatchPageRow>(
             "SELECT channels.id AS channel_id, channels.name AS channel_name,
-                    lives.title, lives.started_at_ms
+                    lives.id AS live_id, lives.title, lives.started_at_ms
              FROM channels
              LEFT JOIN lives ON lives.channel_id = channels.id AND lives.ended_at_ms IS NULL
              WHERE channels.id = ?",
@@ -29,8 +30,9 @@ impl AppService {
         .fetch_optional(&self.pool)
         .await?;
         Ok(row.map(|row| {
-            let live = match (row.title, row.started_at_ms) {
-                (Some(title), Some(started_at_ms)) => Some(OpenLive {
+            let live = match (row.live_id, row.title, row.started_at_ms) {
+                (Some(id), Some(title), Some(started_at_ms)) => Some(OpenLive {
+                    id,
                     title,
                     started_at_ms,
                 }),

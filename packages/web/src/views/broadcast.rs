@@ -5,7 +5,7 @@ use dioxus::prelude::*;
 use serde::Deserialize;
 
 use super::script_with_element_id;
-use super::shell::{rejection_reason, CurrentUser};
+use super::shell::{rejection_reason, CurrentUser, LoginRequired};
 use crate::Route;
 
 /// 카메라 미리보기 `<video>`의 id.
@@ -223,7 +223,7 @@ impl Phase {
 }
 
 /// 휴대폰 방송 `/broadcast`: 휴대폰 브라우저에서 카메라·마이크로 내 채널에 라이브를 시작하고 끝낸다.
-/// 사용자를 골라야 쓸 수 있다(인증은 없다, ADR 0001).
+/// 로그인해야 쓸 수 있고, 송출 시작·종료 권한은 서버가 세션으로 확인한다(ADR 0005).
 #[component]
 pub fn Broadcast() -> Element {
     let CurrentUser(current) = use_context::<CurrentUser>();
@@ -234,12 +234,9 @@ pub fn Broadcast() -> Element {
             h1 { "휴대폰 방송" }
             match user {
                 None => rsx! {
-                    p { class: "notice",
-                        "사용자를 먼저 골라 주세요. 상단 오른쪽 사용자 메뉴(\"시청만 가능\")를 눌러 고르거나 새 닉네임으로 만들면 "
-                        "그 사용자의 채널로 방송할 수 있습니다. 비밀번호는 없습니다."
-                    }
+                    LoginRequired { what: "내 채널로 방송할 수 있습니다." }
                 },
-                // 사용자를 바꾸면 화면을 새로 시작한다(이전 사용자의 송출은 끝난다).
+                // 로그인한 사용자가 바뀌면 화면을 새로 시작한다(이전 사용자의 송출은 끝난다).
                 Some(user) => rsx! {
                     SuspenseBoundary {
                         fallback: |_| rsx! {
@@ -264,7 +261,7 @@ fn Studio(nickname: String) -> Element {
             Camera { settings, nickname }
         },
         Some(Ok(None)) => rsx! {
-            p { class: "notice", "사용자를 먼저 골라 주세요." }
+            LoginRequired { what: "내 채널로 방송할 수 있습니다." }
         },
         Some(Err(error)) => {
             let reason = rejection_reason(error);
