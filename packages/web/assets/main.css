@@ -47,118 +47,38 @@ body {
   text-decoration: none;
 }
 
-.user-menu {
-  position: relative;
+/* 상단 오른쪽 로그인 메뉴: 로그인했으면 닉네임과 "로그아웃", 아니면 "로그인"·"회원가입". */
+.auth-menu {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
-.user-menu input,
-.user-menu button {
-  padding: 6px 8px;
+.auth-nickname {
+  font-weight: 700;
+}
+
+.auth-menu .auth-link,
+.auth-menu .auth-logout {
+  padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg);
   color: var(--fg);
   font: inherit;
-}
-
-.user-menu button {
+  text-decoration: none;
   cursor: pointer;
 }
 
-/* 메뉴를 여는 버튼: 현재 사용자(고르지 않았으면 "시청만 가능")와 펼침 표시. */
-.user-menu .user-menu-button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 140px;
+.auth-menu .auth-link.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
 }
 
-.user-menu-current.viewer-only {
-  color: var(--muted);
-}
-
-.user-menu-caret {
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-
-/* 메뉴 바깥을 누르면 닫히도록 화면 전체를 덮는 투명한 층. */
-.user-menu-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 10;
-}
-
-/* 펼친 메뉴: 상단 바 높이를 바꾸지 않도록 버튼 아래에 띄운다. */
-.user-menu-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 11;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 260px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bar-bg);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-}
-
-.user-menu-heading {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-
-.user-menu-note {
-  margin: 0;
-  font-size: 0.9rem;
-}
-
-.user-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: 240px;
-  overflow-y: auto;
-}
-
-.user-menu .user-option {
-  width: 100%;
-  border: none;
-  background: transparent;
-  text-align: left;
-}
-
-.user-menu .user-option:hover {
-  background: var(--bg);
-}
-
-.user-menu .user-option.selected {
-  font-weight: 700;
-  color: var(--accent);
-}
-
-.user-menu-create {
-  display: flex;
-  gap: 6px;
-}
-
-.user-menu-create input {
-  flex: 1;
-  min-width: 0;
-}
-
-/* 거절 사유: 메뉴 안, 새 닉네임 입력 아래. */
-.user-menu-error {
-  margin: 0;
-  padding: 6px 10px;
+.auth-error {
+  padding: 4px 8px;
   border-radius: 6px;
   background: #d93025;
   color: #fff;
@@ -653,11 +573,126 @@ body {
   font-weight: 700;
 }
 
-/* 좁은 화면(휴대폰): 상단 바가 줄바꿈되어 사용자 메뉴가 왼쪽으로 내려오므로, 펼친 메뉴도 왼쪽에 맞춰 화면 안에 둔다. */
-@media (max-width: 600px) {
-  .user-menu-panel {
-    left: 0;
-    right: auto;
-    max-width: calc(100vw - 32px);
-  }
+/* ---- 로그인·회원가입 (과제 ③) ---- */
+
+.auth-form input {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.auth-form button,
+.comments button,
+.owner-tools button {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.auth-form button:disabled,
+.comments button:disabled,
+.owner-tools button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.comments button.secondary,
+.owner-tools button.secondary {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.owner-tools button.danger {
+  background: #d93025;
+}
+
+/* ---- 녹화방송 관리(주인만)·댓글 (과제 ③) ---- */
+
+.owner-tools,
+.comments {
+  max-width: 960px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bar-bg);
+}
+
+.owner-tools .field-row {
+  margin-bottom: 12px;
+}
+
+.comments-heading {
+  margin: 0 0 12px;
+  font-size: 1.05rem;
+}
+
+.comment-writer textarea,
+.comment textarea {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+}
+
+.comment-writer-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.comment-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.comment {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.comment-author {
+  font-weight: 700;
+}
+
+.comment-content {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.comments button.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-decoration: underline;
+}
+
+.comments button.link-button.danger {
+  color: #d93025;
 }

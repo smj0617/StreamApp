@@ -14,7 +14,7 @@ use axum::{
     response::IntoResponse,
     Router,
 };
-use common::{service, user};
+use common::{cookie, service, user};
 use tower::ServiceExt; // oneshot
 
 const OFFER: &str = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\n";
@@ -77,20 +77,37 @@ async fn fake_mediamtx(reply: Reply) -> (String, Seen) {
     (address, seen)
 }
 
-/// 사용자 "철수"를 만들고 (사용자 ID, 채널 ID, 송출 키)를 돌려준다.
-async fn chulsoo(svc: &AppService) -> (i64, String, String) {
-    let (user_id, channel_id) = user(svc, "철수").await;
+/// 사용자를 회원가입·로그인시키고 (세션 토큰, 채널 ID, 송출 키)를 돌려준다.
+async fn streamer(svc: &AppService, nickname: &str) -> (String, String, String) {
+    let (user_id, channel_id) = user(svc, nickname).await;
     let settings = svc.my_channel_settings(user_id).await.unwrap().unwrap();
-    (user_id, channel_id, settings.stream_key)
+    let session = svc.start_session(user_id).await.unwrap();
+    (session, channel_id, settings.stream_key)
 }
 
-fn offer_request(user_id: Option<i64>, body: &str) -> Request<Body> {
+/// 로그인한 "철수"의 (세션 토큰, 채널 ID, 송출 키).
+async fn chulsoo(svc: &AppService) -> (String, String, String) {
+    streamer(svc, "철수").await
+}
+
+fn offer_request(session: Option<&str>, body: &str) -> Request<Body> {
     let mut request =
         Request::post("/api/broadcast/whip").header(header::CONTENT_TYPE, "application/sdp");
-    if let Some(user_id) = user_id {
-        request = request.header(header::COOKIE, format!("streamapp_user={user_id}"));
+    if let Some(session) = session {
+        request = request.header(header::COOKIE, cookie(session));
     }
     request.body(Body::from(body.to_string())).unwrap()
+}
+
+/// 가짜 MediaMTX가 주는 세션의 앱 쪽 종료 주소.
+const SESSION_PATH: &str = "/api/broadcast/whip/2f6e1c3a-0000-4b9e-9c1d-1234567890ab";
+
+fn stop_request(session: Option<&str>, path: &str) -> Request<Body> {
+    let mut request = Request::delete(path);
+    if let Some(session) = session {
+        request = request.header(header::COOKIE, cookie(session));
+    }
+    request.body(Body::empty()).unwrap()
 }
 
 async fn send(app: &Router, request: Request<Body>) -> Response<Body> {
@@ -112,11 +129,11 @@ async fn message(res: Response<Body>) -> String {
 #[tokio::test]
 async fn offer_is_forwarded_with_channel_and_stream_key_and_answer_comes_back() {
     let svc = service().await;
-    let (user_id, channel_id, stream_key) = chulsoo(&svc).await;
+    let (session, channel_id, stream_key) = chulsoo(&svc).await;
     let (mediamtx, seen) = fake_mediamtx(Reply::Accept).await;
     let app = whip::router(svc, &mediamtx);
 
-    let res = send(&app, offer_request(Some(user_id), OFFER)).await;
+    let res = send(&app, offer_request(Some(session.as_str()), OFFER)).await;
 
     assert_eq!(res.status(), StatusCode::CREATED);
     assert_eq!(res.headers()[header::CONTENT_TYPE], "application/sdp");
@@ -138,22 +155,18 @@ async fn offer_is_forwarded_with_channel_and_stream_key_and_answer_comes_back() 
 #[tokio::test]
 async fn stop_deletes_the_mediamtx_session_of_my_channel() {
     let svc = service().await;
-    let (user_id, channel_id, stream_key) = chulsoo(&svc).await;
+    let (session, channel_id, stream_key) = chulsoo(&svc).await;
     let (mediamtx, seen) = fake_mediamtx(Reply::Accept).await;
     let app = whip::router(svc, &mediamtx);
 
-    let res = send(
-        &app,
-        Request::delete("/api/broadcast/whip/2f6e1c3a-0000-4b9e-9c1d-1234567890ab")
-            .header(header::COOKIE, format!("streamapp_user={user_id}"))
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
+    let started = send(&app, offer_request(Some(session.as_str()), OFFER)).await;
+    assert_eq!(started.status(), StatusCode::CREATED);
+
+    let res = send(&app, stop_request(Some(session.as_str()), SESSION_PATH)).await;
 
     assert_eq!(res.status(), StatusCode::OK);
     assert_eq!(
-        *seen.lock().unwrap(),
+        seen.lock().unwrap()[1..],
         [(
             Method::DELETE,
             format!("/{channel_id}/whip/2f6e1c3a-0000-4b9e-9c1d-1234567890ab?key={stream_key}"),
@@ -163,28 +176,81 @@ async fn stop_deletes_the_mediamtx_session_of_my_channel() {
 }
 
 #[tokio::test]
-async fn offer_without_selected_user_is_rejected_before_reaching_mediamtx() {
+async fn offer_without_login_is_rejected_before_reaching_mediamtx() {
     let svc = service().await;
     let (mediamtx, seen) = fake_mediamtx(Reply::Accept).await;
     let app = whip::router(svc, &mediamtx);
 
-    for user_id in [None, Some(999)] {
-        let res = send(&app, offer_request(user_id, OFFER)).await;
+    for session in [None, Some("made-up-token")] {
+        let res = send(&app, offer_request(session, OFFER)).await;
 
-        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(message(res).await, "사용자를 먼저 골라 주세요");
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(message(res).await, "로그인이 필요합니다");
     }
     assert!(seen.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
-async fn body_that_is_not_sdp_is_rejected() {
+async fn stop_by_another_user_is_forbidden_and_broadcast_keeps_going() {
     let svc = service().await;
-    let (user_id, _, _) = chulsoo(&svc).await;
+    let (owner, _, _) = chulsoo(&svc).await;
+    let (other, _, _) = streamer(&svc, "영희").await;
+    let (mediamtx, seen) = fake_mediamtx(Reply::Accept).await;
+    let app = whip::router(svc, &mediamtx);
+    send(&app, offer_request(Some(owner.as_str()), OFFER)).await;
+
+    let res = send(&app, stop_request(Some(other.as_str()), SESSION_PATH)).await;
+
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    assert_eq!(message(res).await, "방송 주인만 할 수 있습니다");
+    // MediaMTX에는 송출 시작만 갔다.
+    assert_eq!(seen.lock().unwrap().len(), 1);
+
+    // 주인은 그대로 끝낼 수 있다.
+    let res = send(&app, stop_request(Some(owner.as_str()), SESSION_PATH)).await;
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn stop_without_login_is_rejected_with_401() {
+    let svc = service().await;
+    let (owner, _, _) = chulsoo(&svc).await;
+    let (mediamtx, seen) = fake_mediamtx(Reply::Accept).await;
+    let app = whip::router(svc, &mediamtx);
+    send(&app, offer_request(Some(owner.as_str()), OFFER)).await;
+
+    let res = send(&app, stop_request(None, SESSION_PATH)).await;
+
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(seen.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn stop_of_unknown_or_already_stopped_session_is_not_found() {
+    let svc = service().await;
+    let (session, _, _) = chulsoo(&svc).await;
     let (mediamtx, seen) = fake_mediamtx(Reply::Accept).await;
     let app = whip::router(svc, &mediamtx);
 
-    let res = send(&app, offer_request(Some(user_id), "hello")).await;
+    let res = send(&app, stop_request(Some(session.as_str()), SESSION_PATH)).await;
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+    assert!(seen.lock().unwrap().is_empty());
+
+    send(&app, offer_request(Some(session.as_str()), OFFER)).await;
+    let first = send(&app, stop_request(Some(session.as_str()), SESSION_PATH)).await;
+    let second = send(&app, stop_request(Some(session.as_str()), SESSION_PATH)).await;
+    assert_eq!(first.status(), StatusCode::OK);
+    assert_eq!(second.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn body_that_is_not_sdp_is_rejected() {
+    let svc = service().await;
+    let (session, _, _) = chulsoo(&svc).await;
+    let (mediamtx, seen) = fake_mediamtx(Reply::Accept).await;
+    let app = whip::router(svc, &mediamtx);
+
+    let res = send(&app, offer_request(Some(session.as_str()), "hello")).await;
 
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     assert!(seen.lock().unwrap().is_empty());
@@ -193,11 +259,11 @@ async fn body_that_is_not_sdp_is_rejected() {
 #[tokio::test]
 async fn mediamtx_refusal_becomes_conflict_with_reason() {
     let svc = service().await;
-    let (user_id, _, _) = chulsoo(&svc).await;
+    let (session, _, _) = chulsoo(&svc).await;
     let (mediamtx, _) = fake_mediamtx(Reply::Reject).await;
     let app = whip::router(svc, &mediamtx);
 
-    let res = send(&app, offer_request(Some(user_id), OFFER)).await;
+    let res = send(&app, offer_request(Some(session.as_str()), OFFER)).await;
 
     assert_eq!(res.status(), StatusCode::CONFLICT);
     assert!(message(res).await.contains("HTTP 400"));
@@ -206,14 +272,14 @@ async fn mediamtx_refusal_becomes_conflict_with_reason() {
 #[tokio::test]
 async fn unreachable_mediamtx_becomes_bad_gateway() {
     let svc = service().await;
-    let (user_id, _, _) = chulsoo(&svc).await;
+    let (session, _, _) = chulsoo(&svc).await;
     // 띄웠다가 바로 닫은 포트: 연결이 거절된다.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = format!("http://{}", listener.local_addr().unwrap());
     drop(listener);
     let app = whip::router(svc, &address);
 
-    let res = send(&app, offer_request(Some(user_id), OFFER)).await;
+    let res = send(&app, offer_request(Some(session.as_str()), OFFER)).await;
 
     assert_eq!(res.status(), StatusCode::BAD_GATEWAY);
     assert!(message(res).await.contains("MediaMTX"));
@@ -222,16 +288,13 @@ async fn unreachable_mediamtx_becomes_bad_gateway() {
 #[tokio::test]
 async fn session_with_path_characters_is_rejected() {
     let svc = service().await;
-    let (user_id, _, _) = chulsoo(&svc).await;
+    let (session, _, _) = chulsoo(&svc).await;
     let (mediamtx, seen) = fake_mediamtx(Reply::Accept).await;
     let app = whip::router(svc, &mediamtx);
 
     let res = send(
         &app,
-        Request::delete("/api/broadcast/whip/..%2Fother")
-            .header(header::COOKIE, format!("streamapp_user={user_id}"))
-            .body(Body::empty())
-            .unwrap(),
+        stop_request(Some(session.as_str()), "/api/broadcast/whip/..%2Fother"),
     )
     .await;
 
@@ -242,13 +305,13 @@ async fn session_with_path_characters_is_rejected() {
 #[tokio::test]
 async fn offer_for_channel_already_live_is_rejected_before_reaching_mediamtx() {
     let svc = service().await;
-    let (user_id, channel_id, _) = chulsoo(&svc).await;
+    let (session, channel_id, _) = chulsoo(&svc).await;
     // 다른 곳(OBS, 다른 휴대폰)에서 이미 송출 중이다.
     svc.publish_started(&channel_id).await.unwrap();
     let (mediamtx, seen) = fake_mediamtx(Reply::Accept).await;
     let app = whip::router(svc, &mediamtx);
 
-    let res = send(&app, offer_request(Some(user_id), OFFER)).await;
+    let res = send(&app, offer_request(Some(session.as_str()), OFFER)).await;
 
     assert_eq!(res.status(), StatusCode::CONFLICT);
     assert!(message(res).await.contains("이미 방송 중"));

@@ -36,10 +36,24 @@ pub async fn service_with_clock() -> (AppService, FakeClock) {
     (svc, clock)
 }
 
-/// 사용자를 만들고 (사용자 ID, 채널 ID)를 돌려준다.
+/// 테스트 사용자의 비밀번호(시험 값).
+pub const PASSWORD: &str = "test1234";
+
+/// 사용자를 회원가입시키고 (사용자 ID, 채널 ID)를 돌려준다. 비밀번호는 [`PASSWORD`].
 pub async fn user(svc: &AppService, nickname: &str) -> (i64, String) {
-    let created = svc.create_user(nickname).await.unwrap();
+    let created = svc.sign_up(nickname, PASSWORD).await.unwrap();
     (created.user.id, created.channel_id)
+}
+
+/// 사용자를 회원가입시키고 로그인 세션 토큰을 돌려준다.
+pub async fn signed_in(svc: &AppService, nickname: &str) -> String {
+    let (user_id, _) = user(svc, nickname).await;
+    svc.start_session(user_id).await.unwrap()
+}
+
+/// 세션 토큰을 담은 `Cookie` 헤더 값.
+pub fn cookie(session: &str) -> String {
+    format!("streamapp_session={session}")
 }
 
 /// 테스트가 끝나면(값이 사라지면) 지우는 임시 폴더. 녹화방송 영상 파일을 둔다.

@@ -15,7 +15,7 @@ use tower::ServiceExt; // oneshot
 
 /// 기본 사용자를 넣고 첫 사용자의 채널 설정을 돌려준다.
 async fn seeded_channel(svc: &AppService) -> MyChannelSettings {
-    svc.seed_default_users().await.unwrap();
+    svc.seed_default_users(common::PASSWORD).await.unwrap();
     let user = svc.list_users().await.unwrap().remove(0);
     svc.my_channel_settings(user.id).await.unwrap().unwrap()
 }

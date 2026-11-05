@@ -1,7 +1,7 @@
 //! 채팅 WebSocket 서버 함수. 연결 하나를 앱 서비스의 채팅 참여·채팅 보내기 호출로 바꾸기만 한다.
 //!
-//! 보낸 사람은 WebSocket을 연결할 때 쿠키에 있던 사용자다. 사용자를 바꾸면 클라이언트가 연결을
-//! 다시 맺는다. 거절은 HTTP 오류가 아니라 연결된 뒤 메시지로 알린다(브라우저 WebSocket은 업그레이드
+//! 보낸 사람은 WebSocket을 연결할 때 세션 쿠키로 로그인해 있던 사용자다. 로그인·로그아웃하면 클라이언트가
+//! 연결을 다시 맺는다. 로그인하지 않은 연결은 읽기만 하고, 보내면 거절한다. 거절은 HTTP 오류가 아니라 연결된 뒤 메시지로 알린다(브라우저 WebSocket은 업그레이드
 //! 응답의 상태 코드를 보여 주지 않는다).
 
 use dioxus::fullstack::{WebSocketOptions, Websocket};
@@ -40,7 +40,9 @@ pub async fn connect_chat(
     channel_id: String,
     options: WebSocketOptions,
 ) -> Result<Websocket<ChatClientEvent, ChatServerEvent>> {
-    let sender = current_user::remembered_id(&headers);
+    let sender = current_user::signed_in(&service, &headers)
+        .await?
+        .map(|user| user.id);
     let service = service.0;
     Ok(options.on_upgrade(move |socket| {
         crate::server::chat_socket::serve(service, channel_id, sender, socket)

@@ -9,7 +9,10 @@ use common::service_with_clock;
 
 /// 사용자 "철수"를 만들고 그 채널 ID를 돌려준다.
 async fn chulsoo_channel(svc: &AppService) -> String {
-    svc.create_user("철수").await.unwrap().channel_id
+    svc.sign_up("철수", common::PASSWORD)
+        .await
+        .unwrap()
+        .channel_id
 }
 
 #[tokio::test]
@@ -29,6 +32,7 @@ async fn live_channel_watch_page_shows_open_live_and_playback_url() {
             channel_name: "철수".to_string(),
             playback_url: format!("http://localhost:8888/{channel_id}/index.m3u8"),
             live: Some(OpenLive {
+                id: 1,
                 title: "철수님의 라이브".to_string(),
                 started_at_ms: 1_000,
             }),
@@ -55,7 +59,11 @@ async fn channel_that_never_went_live_is_offline() {
 async fn channel_whose_live_ended_is_offline() {
     let (svc, clock) = service_with_clock().await;
     let channel_id = chulsoo_channel(&svc).await;
-    let younghee = svc.create_user("영희").await.unwrap().channel_id;
+    let younghee = svc
+        .sign_up("영희", common::PASSWORD)
+        .await
+        .unwrap()
+        .channel_id;
     clock.set(1_000);
     svc.publish_started(&channel_id).await.unwrap();
     svc.publish_started(&younghee).await.unwrap();

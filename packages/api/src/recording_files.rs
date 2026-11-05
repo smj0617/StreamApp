@@ -34,15 +34,16 @@ pub fn router(service: AppService) -> Router {
         .with_state(service)
 }
 
-/// 녹화방송 올리기: 쿠키의 현재 사용자 채널에 녹화방송을 등록한다. 사용자를 고르지 않았거나 기억된
-/// 사용자가 DB에 없으면 영상 파일을 받기 전에 거절한다.
+/// 녹화방송 올리기: 로그인한 사용자의 채널에 녹화방송을 등록한다. 로그인하지 않았으면 영상 파일을 받기
+/// 전에 401로 거절한다.
 async fn upload(
     State(service): State<AppService>,
     headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
-    let Some(user_id) = current_user::remembered_id(&headers) else {
-        return message(StatusCode::BAD_REQUEST, current_user::NOT_SELECTED);
+    let user_id = match current_user::require_user_id(&service, &headers).await {
+        Ok(user_id) => user_id,
+        Err(error) => return rejected(error),
     };
     let mut title = None;
     loop {
@@ -80,25 +81,17 @@ async fn register(
         .await
     {
         Ok(id) => (StatusCode::CREATED, Json(Uploaded { id })).into_response(),
-        Err(ServiceError::UnknownUser) => {
-            message(StatusCode::BAD_REQUEST, current_user::NOT_SELECTED)
-        }
+        // 확인한 뒤에 사용자가 사라졌다(DB를 지웠다).
+        Err(ServiceError::UnknownUser) => rejected(ServiceError::NotSignedIn),
         Err(error) => rejected(error),
     }
 }
 
-/// 서비스 오류를 상태 코드와 `{"message": ..}`로 바꾼다. 서버 잘못이면 500과 감춘 사유, 아니면 400.
+/// 서비스 오류를 상태 코드([`ServiceError::status_code`])와 `{"message": ..}`로 바꾼다. 서버 잘못이면 감춘 사유.
 fn rejected(error: ServiceError) -> Response {
-    let status = if error.is_internal() {
-        StatusCode::INTERNAL_SERVER_ERROR
-    } else {
-        StatusCode::BAD_REQUEST
-    };
-    message(status, &displayed_reason(error))
-}
-
-fn message(status: StatusCode, message: &str) -> Response {
-    json_message(status, message)
+    let status =
+        StatusCode::from_u16(error.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    json_message(status, &displayed_reason(error))
 }
 
 /// 올리기 성공 응답 본문.

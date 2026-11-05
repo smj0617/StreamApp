@@ -32,3 +32,12 @@ pub const MAX_CHAT_CHARS: usize = 200;
 pub fn fallback_title(channel_name: &str) -> String {
     format!("{channel_name}님의 라이브")
 }
+
+/// 댓글 최대 글자 수(앞뒤 공백을 지운 뒤).
+pub const MAX_COMMENT_CHARS: usize = 500;
+
+/// 비밀번호 최소 글자 수.
+pub const MIN_PASSWORD_CHARS: usize = 8;
+
+/// 비밀번호 최대 글자 수. 해시 계산이 너무 길어지지 않게 막는다.
+pub const MAX_PASSWORD_CHARS: usize = 64;

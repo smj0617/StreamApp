@@ -2,6 +2,7 @@
 
 use sqlx::SqliteConnection;
 
+use super::auth::{hash_password, valid_password};
 use super::{ids, now_ms, AppService, ServiceError};
 use crate::dto::{CreatedUser, User};
 
@@ -41,18 +42,25 @@ impl AppService {
         Ok(row.map(User::from))
     }
 
-    /// 사용자 만들기: 사용자와 그 사용자의 채널(채널 이름 = 닉네임)을 함께 만든다.
-    pub async fn create_user(&self, nickname: &str) -> Result<CreatedUser, ServiceError> {
+    /// 회원가입: 닉네임과 비밀번호로 사용자와 그 사용자의 채널(채널 이름 = 닉네임)을 함께 만든다.
+    /// 로그인 세션은 만들지 않는다([`AppService::start_session`]).
+    pub async fn sign_up(
+        &self,
+        nickname: &str,
+        password: &str,
+    ) -> Result<CreatedUser, ServiceError> {
         let nickname = valid_nickname(nickname)?;
+        let hash = hash_password(valid_password(password)?.to_owned()).await?;
         let mut tx = self.pool.begin().await?;
-        let created = insert_user_with_channel(&mut tx, nickname).await?;
+        let created = insert_user_with_channel(&mut tx, nickname, &hash).await?;
         tx.commit().await?;
         Ok(created)
     }
 
-    /// 기본 데이터: 사용자가 한 명도 없을 때만 사용자 3명과 각자의 채널을 만든다.
-    /// 라이브는 만들지 않는다. 만들었으면 `true`를 돌려준다.
-    pub async fn seed_default_users(&self) -> Result<bool, ServiceError> {
+    /// 기본 데이터: 사용자가 한 명도 없을 때만 사용자 3명과 각자의 채널을 만든다. 비밀번호는 모두
+    /// `password`다. 라이브는 만들지 않는다. 만들었으면 `true`를 돌려준다.
+    pub async fn seed_default_users(&self, password: &str) -> Result<bool, ServiceError> {
+        let hash = hash_password(valid_password(password)?.to_owned()).await?;
         let mut tx = self.pool.begin().await?;
         let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
             .fetch_one(&mut *tx)
@@ -61,25 +69,27 @@ impl AppService {
             return Ok(false);
         }
         for nickname in DEFAULT_NICKNAMES {
-            insert_user_with_channel(&mut tx, nickname).await?;
+            insert_user_with_channel(&mut tx, nickname, &hash).await?;
         }
         tx.commit().await?;
         Ok(true)
     }
 }
 
-/// 사용자와 그 사용자의 채널(채널 이름 = 닉네임)을 함께 만들고, 저장된 값을 돌려준다.
+/// 사용자(비밀번호 해시 포함)와 그 사용자의 채널(채널 이름 = 닉네임)을 함께 만들고, 저장된 값을 돌려준다.
 /// 닉네임 규칙 확인은 부르는 쪽이 맡고, 중복은 `nickname_key`의 UNIQUE 제약으로 거절한다.
 async fn insert_user_with_channel(
     conn: &mut SqliteConnection,
     nickname: &str,
+    password_hash: &str,
 ) -> Result<CreatedUser, ServiceError> {
     let user = sqlx::query_as::<_, UserRow>(
-        "INSERT INTO users (nickname, nickname_key, created_at_ms) VALUES (?, ?, ?)
+        "INSERT INTO users (nickname, nickname_key, password_hash, created_at_ms) VALUES (?, ?, ?, ?)
          RETURNING id, nickname",
     )
     .bind(nickname)
     .bind(nickname_key(nickname))
+    .bind(password_hash)
     .bind(now_ms())
     .fetch_one(&mut *conn)
     .await

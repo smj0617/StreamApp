@@ -5,13 +5,13 @@
 
 use dioxus::fullstack::{TypedWebsocket, WebsocketError};
 
-use super::{current_user, displayed_reason};
+use super::displayed_reason;
 use crate::chat::{ChatClientEvent, ChatServerEvent};
 use crate::service::{AppService, ChatEvent, ServiceError};
 
 /// 연결이 끊기거나 라이브가 끝날 때까지 돈다.
 ///
-/// `sender`는 연결할 때 쿠키에 있던 사용자 ID다(고르지 않았으면 `None`). 연결 도중 사용자를 바꾸면
+/// `sender`는 연결할 때 로그인해 있던 사용자 ID다(로그인하지 않았으면 `None`). 연결 도중 로그인·로그아웃하면
 /// 클라이언트가 새로 연결하므로, 이 연결의 보낸 사람은 바뀌지 않는다.
 pub async fn serve(
     service: AppService,
@@ -65,7 +65,7 @@ pub async fn serve(
                             .await
                             .map(drop)
                             .map_err(displayed_reason),
-                        None => Err(current_user::NOT_SELECTED.to_owned()),
+                        None => Err(ServiceError::NotSignedIn.to_string()),
                     };
                     if let Err(reason) = sent {
                         if socket.send(ChatServerEvent::Rejected { reason }).await.is_err() {
@@ -75,7 +75,7 @@ pub async fn serve(
                 }
                 // 읽을 수 없는 메시지는 버리고 연결은 유지한다.
                 Err(WebsocketError::Deserialization(_)) => {}
-                // 클라이언트가 연결을 닫았다(페이지를 떠났거나 사용자를 바꿔 다시 연결).
+                // 클라이언트가 연결을 닫았다(페이지를 떠났거나 로그인·로그아웃해 다시 연결).
                 Err(_) => break,
             },
         }

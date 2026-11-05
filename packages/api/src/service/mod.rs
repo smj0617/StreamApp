@@ -9,8 +9,10 @@
 //!
 //! 테스트는 [`db::connect_memory`]로 만든 새 메모리 DB 위에서 공개된 동작만 확인한다.
 
+mod auth;
 mod channels;
 mod chat;
+mod comments;
 pub mod db;
 mod ids;
 mod lives;
@@ -24,6 +26,7 @@ use std::sync::Arc;
 
 use sqlx::SqlitePool;
 
+pub use auth::SESSION_LIFETIME_MS;
 pub use chat::{ChatEvent, ChatSubscription};
 pub use publish::PublishingStatus;
 pub use recordings::DEFAULT_RECORDINGS_DIR;
@@ -84,7 +87,7 @@ impl AppService {
     }
 }
 
-/// 서비스 동작이 실패한 이유. 서버 잘못([`ServiceError::is_internal`]: `Database`, `File`) 말고는 모두
+/// 서비스 동작이 실패한 이유. 서버 잘못([`ServiceError::is_internal`]: `Database`, `File`, `PasswordHash`) 말고는 모두
 /// 규칙 위반이며, 메시지는 화면에 그대로 보여 줄 거절 사유다.
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
@@ -93,6 +96,9 @@ pub enum ServiceError {
     /// 녹화방송 영상 파일을 쓰거나 옮기지 못했다.
     #[error("파일 오류: {0}")]
     File(#[from] std::io::Error),
+    /// 비밀번호 해시를 만들지 못했다(서버 잘못).
+    #[error("비밀번호 해시 오류: {0}")]
+    PasswordHash(String),
     #[error("닉네임은 앞뒤 공백을 뺀 2~10자여야 합니다")]
     NicknameLength,
     #[error("닉네임에는 한글, 영문, 숫자만 쓸 수 있습니다")]
@@ -124,12 +130,53 @@ pub enum ServiceError {
     RecordingTooLarge,
     #[error("영상을 받는 중에 연결이 끊겼습니다. 다시 올려 주세요")]
     UploadInterrupted,
+    #[error("비밀번호는 {min}~{max}자여야 합니다", min = crate::rules::MIN_PASSWORD_CHARS, max = crate::rules::MAX_PASSWORD_CHARS)]
+    PasswordLength,
+    /// 닉네임이 없는지 비밀번호가 틀렸는지 알려 주지 않는다.
+    #[error("닉네임 또는 비밀번호가 맞지 않습니다")]
+    LoginFailed,
+    /// 로그인하지 않았거나 세션이 끝났다.
+    #[error("로그인이 필요합니다")]
+    NotSignedIn,
+    #[error("방송 주인만 할 수 있습니다")]
+    NotBroadcastOwner,
+    #[error("댓글을 쓴 사람만 고치거나 지울 수 있습니다")]
+    NotCommentAuthor,
+    #[error("없는 녹화방송입니다")]
+    UnknownRecording,
+    #[error("없는 라이브입니다")]
+    UnknownLive,
+    #[error("없는 댓글입니다")]
+    UnknownComment,
+    #[error("댓글 내용을 입력해 주세요")]
+    CommentEmpty,
+    #[error("댓글은 {max}자를 넘을 수 없습니다", max = crate::rules::MAX_COMMENT_CHARS)]
+    CommentTooLong,
 }
 
 impl ServiceError {
     /// 규칙 위반이 아니라 서버 잘못(DB·파일 오류)인지. 자세한 내용은 로그에만 남기고 화면에는 감춘다.
     pub fn is_internal(&self) -> bool {
-        matches!(self, ServiceError::Database(_) | ServiceError::File(_))
+        matches!(
+            self,
+            ServiceError::Database(_) | ServiceError::File(_) | ServiceError::PasswordHash(_)
+        )
+    }
+
+    /// 이 오류에 맞는 HTTP 상태 코드. 서버 잘못 500, 로그인 필요·로그인 실패 401, 주인·작성자가 아님 403,
+    /// 없는 녹화방송·라이브·댓글 404, 나머지 규칙 위반 400.
+    pub fn status_code(&self) -> u16 {
+        match self {
+            ServiceError::Database(_) | ServiceError::File(_) | ServiceError::PasswordHash(_) => {
+                500
+            }
+            ServiceError::NotSignedIn | ServiceError::LoginFailed => 401,
+            ServiceError::NotBroadcastOwner | ServiceError::NotCommentAuthor => 403,
+            ServiceError::UnknownRecording
+            | ServiceError::UnknownLive
+            | ServiceError::UnknownComment => 404,
+            _ => 400,
+        }
     }
 }
 

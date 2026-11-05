@@ -23,7 +23,7 @@ async fn empty_db_has_no_users() {
 async fn seeding_empty_db_creates_three_default_users() {
     let svc = service().await;
 
-    svc.seed_default_users().await.unwrap();
+    svc.seed_default_users(common::PASSWORD).await.unwrap();
 
     let users = svc.list_users().await.unwrap();
     assert_eq!(nicknames(&users), ["철수", "영희", "민수"]);
@@ -32,9 +32,9 @@ async fn seeding_empty_db_creates_three_default_users() {
 #[tokio::test]
 async fn seeding_does_nothing_when_users_already_exist() {
     let svc = service().await;
-    assert!(svc.seed_default_users().await.unwrap());
+    assert!(svc.seed_default_users(common::PASSWORD).await.unwrap());
 
-    let seeded_again = svc.seed_default_users().await.unwrap();
+    let seeded_again = svc.seed_default_users(common::PASSWORD).await.unwrap();
 
     assert!(!seeded_again);
     let users = svc.list_users().await.unwrap();
@@ -47,7 +47,7 @@ async fn seeding_does_nothing_when_users_already_exist() {
 async fn creating_user_also_creates_channel_named_after_nickname() {
     let svc = service().await;
 
-    let created = svc.create_user("철수").await.unwrap();
+    let created = svc.sign_up("철수", common::PASSWORD).await.unwrap();
 
     assert_eq!(created.user.nickname, "철수");
     assert_eq!(created.channel_name, "철수");
@@ -59,8 +59,8 @@ async fn creating_user_also_creates_channel_named_after_nickname() {
 async fn each_created_user_gets_own_url_safe_channel_id() {
     let svc = service().await;
 
-    let a = svc.create_user("철수").await.unwrap();
-    let b = svc.create_user("영희").await.unwrap();
+    let a = svc.sign_up("철수", common::PASSWORD).await.unwrap();
+    let b = svc.sign_up("영희", common::PASSWORD).await.unwrap();
 
     assert_ne!(a.channel_id, b.channel_id);
     for id in [&a.channel_id, &b.channel_id] {
@@ -75,7 +75,7 @@ async fn each_created_user_gets_own_url_safe_channel_id() {
 async fn nickname_is_trimmed_before_saving() {
     let svc = service().await;
 
-    let created = svc.create_user("  Alice \t").await.unwrap();
+    let created = svc.sign_up("  Alice \t", common::PASSWORD).await.unwrap();
 
     assert_eq!(created.user.nickname, "Alice");
     assert_eq!(created.channel_name, "Alice");
@@ -87,7 +87,7 @@ async fn nickname_of_2_to_10_characters_is_accepted() {
 
     // 글자 수로 센다: 한글 10자는 30바이트지만 허용된다.
     for nickname in ["ab", "가나", "가나다라마바사아자차", "abcdefghij"] {
-        let created = svc.create_user(nickname).await.unwrap();
+        let created = svc.sign_up(nickname, common::PASSWORD).await.unwrap();
         assert_eq!(created.user.nickname, nickname);
     }
 }
@@ -105,7 +105,7 @@ async fn nickname_shorter_than_2_or_longer_than_10_characters_is_rejected() {
         "abcdefghijk",
         "가나다라마바사아자차카",
     ] {
-        let result = svc.create_user(nickname).await;
+        let result = svc.sign_up(nickname, common::PASSWORD).await;
         assert!(
             matches!(result, Err(ServiceError::NicknameLength)),
             "{nickname:?} -> {result:?}"
@@ -118,7 +118,7 @@ async fn nickname_shorter_than_2_or_longer_than_10_characters_is_rejected() {
 async fn nickname_of_hangul_latin_letters_and_digits_is_accepted() {
     let svc = service().await;
 
-    let created = svc.create_user("Kim철수99").await.unwrap();
+    let created = svc.sign_up("Kim철수99", common::PASSWORD).await.unwrap();
 
     assert_eq!(created.user.nickname, "Kim철수99");
 }
@@ -138,7 +138,7 @@ async fn nickname_with_other_characters_is_rejected() {
         "１２３", // 전각 숫자
         "철수😀",
     ] {
-        let result = svc.create_user(nickname).await;
+        let result = svc.sign_up(nickname, common::PASSWORD).await;
         assert!(
             matches!(result, Err(ServiceError::NicknameCharacters)),
             "{nickname:?} -> {result:?}"
@@ -150,10 +150,10 @@ async fn nickname_with_other_characters_is_rejected() {
 #[tokio::test]
 async fn nickname_differing_only_in_ascii_case_is_rejected_as_duplicate() {
     let svc = service().await;
-    let alice = svc.create_user("Alice").await.unwrap();
+    let alice = svc.sign_up("Alice", common::PASSWORD).await.unwrap();
 
     for nickname in ["Alice", "alice", "ALICE", "  aLiCe "] {
-        let result = svc.create_user(nickname).await;
+        let result = svc.sign_up(nickname, common::PASSWORD).await;
         assert!(
             matches!(result, Err(ServiceError::DuplicateNickname)),
             "{nickname:?} -> {result:?}"
@@ -165,9 +165,9 @@ async fn nickname_differing_only_in_ascii_case_is_rejected_as_duplicate() {
 #[tokio::test]
 async fn nickname_of_default_user_is_rejected_as_duplicate() {
     let svc = service().await;
-    svc.seed_default_users().await.unwrap();
+    svc.seed_default_users(common::PASSWORD).await.unwrap();
 
-    let result = svc.create_user("철수").await;
+    let result = svc.sign_up("철수", common::PASSWORD).await;
 
     assert!(matches!(result, Err(ServiceError::DuplicateNickname)));
 }
@@ -177,8 +177,8 @@ async fn nickname_of_default_user_is_rejected_as_duplicate() {
 #[tokio::test]
 async fn existing_user_can_be_found_by_id() {
     let svc = service().await;
-    svc.create_user("철수").await.unwrap();
-    let younghee = svc.create_user("영희").await.unwrap().user;
+    svc.sign_up("철수", common::PASSWORD).await.unwrap();
+    let younghee = svc.sign_up("영희", common::PASSWORD).await.unwrap().user;
 
     let found = svc.find_user(younghee.id).await.unwrap();
 
@@ -188,7 +188,7 @@ async fn existing_user_can_be_found_by_id() {
 #[tokio::test]
 async fn unknown_user_id_finds_nobody() {
     let svc = service().await;
-    let chulsoo = svc.create_user("철수").await.unwrap().user;
+    let chulsoo = svc.sign_up("철수", common::PASSWORD).await.unwrap().user;
 
     let found = svc.find_user(chulsoo.id + 1).await.unwrap();
 
@@ -199,7 +199,7 @@ async fn unknown_user_id_finds_nobody() {
 
 /// 기본 사용자를 넣고, 그 사용자들의 채널 설정(채널 ID, 송출 키)을 만든 순서대로 돌려준다.
 async fn seeded_channels(svc: &AppService) -> Vec<MyChannelSettings> {
-    svc.seed_default_users().await.unwrap();
+    svc.seed_default_users(common::PASSWORD).await.unwrap();
     let mut channels = Vec::new();
     for user in svc.list_users().await.unwrap() {
         let settings = svc.my_channel_settings(user.id).await.unwrap();
@@ -276,7 +276,7 @@ async fn unknown_channel_cannot_publish() {
 #[tokio::test]
 async fn channel_settings_give_obs_server_and_stream_key_values() {
     let svc = service().await;
-    let created = svc.create_user("철수").await.unwrap();
+    let created = svc.sign_up("철수", common::PASSWORD).await.unwrap();
 
     let settings = svc
         .my_channel_settings(created.user.id)
@@ -295,8 +295,8 @@ async fn channel_settings_give_obs_server_and_stream_key_values() {
 #[tokio::test]
 async fn creating_user_issues_hard_to_guess_stream_key_for_each_channel() {
     let svc = service().await;
-    let a = svc.create_user("철수").await.unwrap().user;
-    let b = svc.create_user("영희").await.unwrap().user;
+    let a = svc.sign_up("철수", common::PASSWORD).await.unwrap().user;
+    let b = svc.sign_up("영희", common::PASSWORD).await.unwrap().user;
 
     let key_a = svc
         .my_channel_settings(a.id)
@@ -321,7 +321,7 @@ async fn creating_user_issues_hard_to_guess_stream_key_for_each_channel() {
 #[tokio::test]
 async fn unknown_user_has_no_channel_settings() {
     let svc = service().await;
-    let chulsoo = svc.create_user("철수").await.unwrap().user;
+    let chulsoo = svc.sign_up("철수", common::PASSWORD).await.unwrap().user;
 
     let settings = svc.my_channel_settings(chulsoo.id + 1).await.unwrap();
 
@@ -337,7 +337,7 @@ async fn next_live_title(svc: &AppService, user_id: i64) -> Option<String> {
 #[tokio::test]
 async fn next_live_title_is_empty_until_written() {
     let svc = service().await;
-    let chulsoo = svc.create_user("철수").await.unwrap().user;
+    let chulsoo = svc.sign_up("철수", common::PASSWORD).await.unwrap().user;
 
     assert_eq!(next_live_title(&svc, chulsoo.id).await, None);
 }
@@ -345,8 +345,8 @@ async fn next_live_title_is_empty_until_written() {
 #[tokio::test]
 async fn changed_next_live_title_shows_in_own_channel_settings_only() {
     let svc = service().await;
-    let chulsoo = svc.create_user("철수").await.unwrap().user;
-    let younghee = svc.create_user("영희").await.unwrap().user;
+    let chulsoo = svc.sign_up("철수", common::PASSWORD).await.unwrap().user;
+    let younghee = svc.sign_up("영희", common::PASSWORD).await.unwrap().user;
 
     svc.change_next_live_title(chulsoo.id, "오늘은 마인크래프트")
         .await
@@ -362,7 +362,7 @@ async fn changed_next_live_title_shows_in_own_channel_settings_only() {
 #[tokio::test]
 async fn next_live_title_of_100_characters_is_accepted() {
     let svc = service().await;
-    let chulsoo = svc.create_user("철수").await.unwrap().user;
+    let chulsoo = svc.sign_up("철수", common::PASSWORD).await.unwrap().user;
     // 글자 수로 센다: 한글 100자는 300바이트지만 허용된다.
     let title = "가".repeat(100);
 
@@ -376,7 +376,7 @@ async fn next_live_title_of_100_characters_is_accepted() {
 #[tokio::test]
 async fn next_live_title_longer_than_100_characters_is_rejected() {
     let svc = service().await;
-    let chulsoo = svc.create_user("철수").await.unwrap().user;
+    let chulsoo = svc.sign_up("철수", common::PASSWORD).await.unwrap().user;
     svc.change_next_live_title(chulsoo.id, "원래 제목")
         .await
         .unwrap();
@@ -398,7 +398,7 @@ async fn next_live_title_longer_than_100_characters_is_rejected() {
 #[tokio::test]
 async fn next_live_title_is_trimmed_before_saving() {
     let svc = service().await;
-    let chulsoo = svc.create_user("철수").await.unwrap().user;
+    let chulsoo = svc.sign_up("철수", common::PASSWORD).await.unwrap().user;
 
     let saved = svc
         .change_next_live_title(chulsoo.id, "  저녁 수다 \t")
@@ -415,7 +415,7 @@ async fn next_live_title_is_trimmed_before_saving() {
 #[tokio::test]
 async fn blank_next_live_title_clears_it() {
     let svc = service().await;
-    let chulsoo = svc.create_user("철수").await.unwrap().user;
+    let chulsoo = svc.sign_up("철수", common::PASSWORD).await.unwrap().user;
     svc.change_next_live_title(chulsoo.id, "원래 제목")
         .await
         .unwrap();
@@ -431,7 +431,7 @@ async fn blank_next_live_title_clears_it() {
 #[tokio::test]
 async fn next_live_title_of_unknown_user_is_rejected() {
     let svc = service().await;
-    let chulsoo = svc.create_user("철수").await.unwrap().user;
+    let chulsoo = svc.sign_up("철수", common::PASSWORD).await.unwrap().user;
 
     let result = svc.change_next_live_title(chulsoo.id + 1, "제목").await;
 

@@ -65,6 +65,7 @@ async fn registered_recording_is_saved_and_shown_in_list_and_page() {
             id,
             title: "첫 녹화".to_string(),
             channel_id,
+            owner_id: user_id,
             channel_name: "철수".to_string(),
             video_url: format!("/media/recordings/{file_name}"),
             registered_at_ms: 5_000,
@@ -313,4 +314,139 @@ async fn recording_survives_restart_with_same_db_file_and_folder() {
         std::fs::read(recordings_dir.join(file_name)).unwrap(),
         b"keep"
     );
+}
+
+// ---- 과제 ③: 녹화방송 관리는 주인만 ----
+
+/// "철수"가 녹화방송 하나를 올리고, "영희"도 가입한다. (서비스, 철수 ID, 영희 ID, 녹화방송 ID, 폴더)
+async fn recording_of_chulsoo() -> (AppService, i64, i64, i64, TempDir) {
+    let (svc, _, dir) = service_with_recordings().await;
+    let (chulsoo, _) = user(&svc, "철수").await;
+    let (younghee, _) = user(&svc, "영희").await;
+    let id = svc
+        .register_recording(chulsoo, "철수의 녹화", "clip.mp4", body(b"video"))
+        .await
+        .unwrap();
+    (svc, chulsoo, younghee, id, dir)
+}
+
+#[tokio::test]
+async fn recording_page_tells_owner() {
+    let (svc, chulsoo, _, id, _dir) = recording_of_chulsoo().await;
+
+    let page = svc.recording_page(id).await.unwrap().unwrap();
+
+    assert_eq!(page.owner_id, chulsoo);
+}
+
+#[tokio::test]
+async fn owner_can_rename_recording() {
+    let (svc, chulsoo, _, id, _dir) = recording_of_chulsoo().await;
+
+    let saved = svc
+        .rename_recording(chulsoo, id, "  고친 제목 ")
+        .await
+        .unwrap();
+
+    assert_eq!(saved, "고친 제목");
+    assert_eq!(
+        svc.recording_page(id).await.unwrap().unwrap().title,
+        "고친 제목"
+    );
+}
+
+#[tokio::test]
+async fn another_user_cannot_rename_recording() {
+    let (svc, _, younghee, id, _dir) = recording_of_chulsoo().await;
+
+    let result = svc.rename_recording(younghee, id, "남의 제목").await;
+
+    assert!(
+        matches!(result, Err(ServiceError::NotBroadcastOwner)),
+        "{result:?}"
+    );
+    assert_eq!(result.unwrap_err().status_code(), 403);
+    assert_eq!(
+        svc.recording_page(id).await.unwrap().unwrap().title,
+        "철수의 녹화"
+    );
+}
+
+#[tokio::test]
+async fn another_user_with_bad_title_still_gets_forbidden() {
+    let (svc, _, younghee, id, _dir) = recording_of_chulsoo().await;
+
+    let result = svc.rename_recording(younghee, id, " ").await;
+
+    assert!(
+        matches!(result, Err(ServiceError::NotBroadcastOwner)),
+        "{result:?}"
+    );
+}
+
+#[tokio::test]
+async fn owner_rename_follows_title_rules() {
+    let (svc, chulsoo, _, id, _dir) = recording_of_chulsoo().await;
+
+    let empty = svc.rename_recording(chulsoo, id, "  ").await;
+    let long = svc.rename_recording(chulsoo, id, &"가".repeat(101)).await;
+
+    assert!(
+        matches!(empty, Err(ServiceError::RecordingTitleEmpty)),
+        "{empty:?}"
+    );
+    assert!(matches!(long, Err(ServiceError::TitleTooLong)), "{long:?}");
+}
+
+#[tokio::test]
+async fn managing_unknown_recording_is_not_found() {
+    let (svc, chulsoo, _, _, _dir) = recording_of_chulsoo().await;
+
+    let renamed = svc.rename_recording(chulsoo, 999, "제목").await;
+    let deleted = svc.delete_recording(chulsoo, 999).await;
+
+    assert!(
+        matches!(renamed, Err(ServiceError::UnknownRecording)),
+        "{renamed:?}"
+    );
+    assert!(
+        matches!(deleted, Err(ServiceError::UnknownRecording)),
+        "{deleted:?}"
+    );
+}
+
+#[tokio::test]
+async fn owner_can_delete_recording_with_its_file_and_comments() {
+    let (svc, chulsoo, younghee, id, _dir) = recording_of_chulsoo().await;
+    svc.write_comment(
+        younghee,
+        api::dto::CommentTarget::Recording(id),
+        "잘 봤어요",
+    )
+    .await
+    .unwrap();
+
+    svc.delete_recording(chulsoo, id).await.unwrap();
+
+    assert!(svc.recordings().await.unwrap().is_empty());
+    assert_eq!(svc.recording_page(id).await.unwrap(), None);
+    assert!(stored_files(&svc).is_empty(), "{:?}", stored_files(&svc));
+    assert!(matches!(
+        svc.comments(api::dto::CommentTarget::Recording(id)).await,
+        Err(ServiceError::UnknownRecording)
+    ));
+}
+
+#[tokio::test]
+async fn another_user_cannot_delete_recording() {
+    let (svc, _, younghee, id, _dir) = recording_of_chulsoo().await;
+
+    let result = svc.delete_recording(younghee, id).await;
+
+    assert!(
+        matches!(result, Err(ServiceError::NotBroadcastOwner)),
+        "{result:?}"
+    );
+    assert_eq!(svc.recordings().await.unwrap().len(), 1);
+    assert_eq!(stored_files(&svc).len(), 1);
 }

@@ -1,13 +1,14 @@
-use api::dto::WatchPage;
+use api::dto::{CommentTarget, WatchPage};
 use dioxus::prelude::*;
 
 use super::chat::Chat;
+use super::comments::Comments;
 use super::hls_player::HlsPlayer;
 use super::shell::rejection_reason;
 use crate::Route;
 
-/// 시청 페이지 `/live/<채널ID>`: 라이브 중이면 영상을 자동 재생하고 채팅을 연다. 사용자를 고르지
-/// 않아도 볼 수 있다(채팅은 읽기만).
+/// 시청 페이지 `/live/<채널ID>`: 라이브 중이면 영상을 자동 재생하고 채팅과 이 라이브의 댓글을 연다.
+/// 로그인하지 않아도 볼 수 있다(채팅·댓글은 읽기만).
 ///
 /// 들어올 때의 상태(라이브 중, 오프라인, 없는 채널)를 보여 준다. 보는 도중 라이브 제목이 바뀌거나
 /// 라이브가 끝나면 채팅으로 알림을 받아 바로 표시한다. 오프라인에서 라이브로 바뀌는 것은 새로고침해야
@@ -59,7 +60,7 @@ fn WatchChannel(page: WatchPage) -> Element {
     });
 
     match page.live {
-        Some(_) => rsx! {
+        Some(live) => rsx! {
             div { class: "watch-stage",
                 HlsPlayer { key: "{page.playback_url}", src: page.playback_url.clone(), ended }
                 if ended() {
@@ -80,6 +81,13 @@ fn WatchChannel(page: WatchPage) -> Element {
                 p { class: "watch-channel", "{page.channel_name}" }
             }
             Chat { channel_id: page.channel_id.clone(), ended, live_title: title }
+            // 채팅은 흘러가고 저장하지 않지만, 댓글은 이 라이브 회차에 남는다.
+            SuspenseBoundary {
+                fallback: |_| rsx! {
+                    p { class: "muted", "댓글을 불러오는 중…" }
+                },
+                Comments { target: CommentTarget::Live(live.id) }
+            }
         },
         None => rsx! {
             div { class: "watch-offline",
