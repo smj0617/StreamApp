@@ -420,7 +420,7 @@ async fn owner_can_delete_recording_with_its_file_and_comments() {
     let (svc, chulsoo, younghee, id, _dir) = recording_of_chulsoo().await;
     svc.write_comment(
         younghee,
-        api::dto::CommentTarget::Recording(id),
+        api::dto::BroadcastTarget::Recording(id),
         "잘 봤어요",
     )
     .await
@@ -432,7 +432,7 @@ async fn owner_can_delete_recording_with_its_file_and_comments() {
     assert_eq!(svc.recording_page(id).await.unwrap(), None);
     assert!(stored_files(&svc).is_empty(), "{:?}", stored_files(&svc));
     assert!(matches!(
-        svc.comments(api::dto::CommentTarget::Recording(id)).await,
+        svc.comments(api::dto::BroadcastTarget::Recording(id)).await,
         Err(ServiceError::UnknownRecording)
     ));
 }

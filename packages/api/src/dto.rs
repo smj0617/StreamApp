@@ -62,7 +62,7 @@ pub struct WatchPage {
 /// 채널에서 지금 열려 있는(송출 중인) 라이브.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct OpenLive {
-    /// 라이브 ID. 라이브 댓글([`CommentTarget::Live`])을 이 ID로 단다.
+    /// 라이브 ID. 라이브 댓글([`BroadcastTarget::Live`])을 이 ID로 단다.
     pub id: i64,
     pub title: String,
     /// 라이브가 열린 시각(유닉스 밀리초)
@@ -128,9 +128,9 @@ pub struct RecordingPage {
     pub server_now_ms: i64,
 }
 
-/// 댓글을 다는 방송: 녹화방송 하나 또는 라이브 한 회차.
+/// 방송 하나: 녹화방송 하나 또는 라이브 한 회차. 댓글과 후원이 이 방송에 붙는다.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CommentTarget {
+pub enum BroadcastTarget {
     /// 녹화방송 ID
     Recording(i64),
     /// 라이브 ID([`OpenLive::id`])
@@ -156,6 +156,94 @@ pub struct Comment {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct CommentList {
     pub comments: Vec<Comment>,
+    /// 서버의 현재 시각(유닉스 밀리초)
+    pub server_now_ms: i64,
+}
+
+/// 후원 주문: 서버가 후원 내용을 확인하고 만든 주문. 화면은 이 값 그대로 결제 서비스(토스페이먼츠 테스트 모드)
+/// 결제창을 연다. 금액·받는 채널은 서버가 정했고, 확정할 때 서버가 다시 확인한다.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct DonationOrder {
+    /// 결제 서비스에 넘길 주문번호(서버가 만든 무작위 값)
+    pub order_id: String,
+    /// 결제할 금액(원)
+    pub amount: i64,
+    /// 결제창에 보일 주문 이름: "<채널 이름>님 후원"
+    pub order_name: String,
+    /// 받는 채널 이름
+    pub recipient_name: String,
+    /// 결제 서비스 클라이언트 키(브라우저에 공개되는 값, 테스트 키만 쓴다)
+    pub client_key: String,
+    /// 결제창의 구매자 식별 값(주문마다 새로 만든 무작위 값)
+    pub customer_key: String,
+}
+
+/// 결제 서비스가 성공 주소로 돌려준 승인 요청 값. 화면이 받은 그대로 서버에 넘기고, 서버는 이 값을 믿지 않고
+/// 주문과 비교한 뒤 결제 서비스에 승인을 요청한다.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct PaymentApproval {
+    pub payment_key: String,
+    pub order_id: String,
+    pub amount: i64,
+}
+
+/// 후원 주문의 상태.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DonationStatus {
+    /// 결제창을 열었고 아직 승인을 확인하지 않았다
+    Pending,
+    /// 서버가 결제 승인을 확인해 확정했다. 후원 내역과 합계에는 이것만 들어간다
+    Confirmed,
+    /// 후원한 사람이 결제를 취소했다
+    Canceled,
+    /// 결제가 실패했거나 결제 정보가 주문과 달랐다
+    Failed,
+}
+
+/// 후원 결제를 처리한 결과(확정·취소·실패). 결과 페이지가 보여 준다.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct DonationResult {
+    pub order_id: String,
+    pub status: DonationStatus,
+    pub amount: i64,
+    pub recipient_name: String,
+    /// 받는 채널 ID(라이브 시청 페이지로 돌아갈 때 쓴다)
+    pub recipient_channel_id: String,
+    /// 후원한 방송. 녹화방송이 지워졌으면 `None`
+    pub target: Option<BroadcastTarget>,
+    /// 이미 확정된 결제의 승인 통지를 다시 받았는지(새로고침 등). 이때도 다시 적립하지 않는다
+    pub already_processed: bool,
+    /// 취소·실패한 이유
+    pub failure_reason: Option<String>,
+}
+
+/// 확정된 후원 하나: 방송별 후원 내역의 한 줄.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Donation {
+    pub id: i64,
+    pub donor_nickname: String,
+    /// 원(KRW)
+    pub amount: i64,
+    /// 후원 메시지(비어 있을 수 있다)
+    pub message: String,
+    /// 확정한 시각(유닉스 밀리초)
+    pub confirmed_at_ms: i64,
+}
+
+/// 방송 하나의 후원 내역(최근 확정순)과 합계, 받는 사람 정보.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct DonationBoard {
+    pub donations: Vec<Donation>,
+    /// 확정된 후원 금액 합계(원)
+    pub total_amount: i64,
+    /// 확정된 후원 수
+    pub count: i64,
+    /// 받는 채널 ID와 이름, 채널 주인 사용자 ID(자기 방송에는 후원 칸을 숨긴다)
+    pub recipient_channel_id: String,
+    pub recipient_name: String,
+    pub recipient_user_id: i64,
+    /// 서버에 결제 서비스 테스트 키가 설정되어 있는지. 없으면 화면은 후원 칸 대신 안내를 보인다
+    pub payments_enabled: bool,
     /// 서버의 현재 시각(유닉스 밀리초)
     pub server_now_ms: i64,
 }

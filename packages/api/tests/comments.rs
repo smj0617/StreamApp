@@ -3,7 +3,7 @@
 
 mod common;
 
-use api::dto::{Comment, CommentTarget};
+use api::dto::{BroadcastTarget, Comment};
 use api::service::{AppService, ServiceError};
 use bytes::Bytes;
 use common::{service_with_recordings, user, FakeClock, TempDir};
@@ -14,7 +14,7 @@ struct World {
     clock: FakeClock,
     chulsoo: i64,
     younghee: i64,
-    recording: CommentTarget,
+    recording: BroadcastTarget,
     _dir: TempDir,
 }
 
@@ -37,7 +37,7 @@ async fn world() -> World {
         clock,
         chulsoo,
         younghee,
-        recording: CommentTarget::Recording(id),
+        recording: BroadcastTarget::Recording(id),
         _dir: dir,
     }
 }
@@ -90,7 +90,7 @@ async fn comments_belong_to_one_broadcast() {
         .live
         .unwrap()
         .id;
-    let live = CommentTarget::Live(live_id);
+    let live = BroadcastTarget::Live(live_id);
 
     w.svc
         .write_comment(w.younghee, w.recording, "녹화 댓글")
@@ -138,13 +138,17 @@ async fn live_comments_stay_after_live_ends() {
         .unwrap()
         .id;
     w.svc
-        .write_comment(w.younghee, CommentTarget::Live(live_id), "수고했어요")
+        .write_comment(w.younghee, BroadcastTarget::Live(live_id), "수고했어요")
         .await
         .unwrap();
 
     w.svc.publish_ended(&channel_id).await.unwrap();
 
-    let list = w.svc.comments(CommentTarget::Live(live_id)).await.unwrap();
+    let list = w
+        .svc
+        .comments(BroadcastTarget::Live(live_id))
+        .await
+        .unwrap();
     assert_eq!(list.comments.len(), 1);
 }
 
@@ -154,13 +158,13 @@ async fn comment_on_unknown_broadcast_is_not_found() {
 
     let recording = w
         .svc
-        .write_comment(w.younghee, CommentTarget::Recording(999), "?")
+        .write_comment(w.younghee, BroadcastTarget::Recording(999), "?")
         .await;
     let live = w
         .svc
-        .write_comment(w.younghee, CommentTarget::Live(999), "?")
+        .write_comment(w.younghee, BroadcastTarget::Live(999), "?")
         .await;
-    let list = w.svc.comments(CommentTarget::Live(999)).await;
+    let list = w.svc.comments(BroadcastTarget::Live(999)).await;
 
     assert!(
         matches!(recording, Err(ServiceError::UnknownRecording)),

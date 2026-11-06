@@ -1,4 +1,4 @@
-use api::dto::{Comment, CommentTarget};
+use api::dto::{BroadcastTarget, Comment};
 use api::rules::MAX_COMMENT_CHARS;
 use dioxus::prelude::*;
 
@@ -8,12 +8,12 @@ use super::shell::{rejection_reason, CurrentUser, LoginRequired};
 /// 방송 하나(녹화방송·라이브)의 댓글: 목록은 누구나 보고, 로그인하면 쓴다. 자기 댓글에만 "수정"·"삭제"
 /// 버튼이 보인다. 버튼을 숨기는 것은 화면 편의일 뿐이고, 작성자 확인은 서버가 한다.
 #[component]
-pub fn Comments(target: CommentTarget) -> Element {
+pub fn Comments(target: BroadcastTarget) -> Element {
     // 서버 렌더링 때 불러온 목록을 HTML에 넣고, 클라이언트는 그 결과를 이어받는다.
     let loaded = use_server_future(move || async move {
         match target {
-            CommentTarget::Recording(id) => api::recording_comments(id).await,
-            CommentTarget::Live(id) => api::live_comments(id).await,
+            BroadcastTarget::Recording(id) => api::recording_comments(id).await,
+            BroadcastTarget::Live(id) => api::live_comments(id).await,
         }
     })?;
     let state = (*loaded.read()).clone();
@@ -39,7 +39,7 @@ pub fn Comments(target: CommentTarget) -> Element {
 
 /// 불러온 댓글을 복사해 두고, 쓰기·고치기·지우기 결과를 여기에 바로 반영한다(목록을 다시 불러오지 않는다).
 #[component]
-fn CommentBoard(comments: Vec<Comment>, server_now_ms: i64, target: CommentTarget) -> Element {
+fn CommentBoard(comments: Vec<Comment>, server_now_ms: i64, target: BroadcastTarget) -> Element {
     let CurrentUser(current) = use_context::<CurrentUser>();
     let list = use_signal(|| comments);
     let me = current.read().as_ref().map(|user| user.id);
@@ -71,7 +71,7 @@ fn CommentBoard(comments: Vec<Comment>, server_now_ms: i64, target: CommentTarge
 
 /// 댓글 입력 칸과 "등록" 버튼.
 #[component]
-fn CommentWriter(target: CommentTarget, list: Signal<Vec<Comment>>) -> Element {
+fn CommentWriter(target: BroadcastTarget, list: Signal<Vec<Comment>>) -> Element {
     let mut draft = use_signal(String::new);
     let mut error = use_signal(|| None::<String>);
     let mut list = list;

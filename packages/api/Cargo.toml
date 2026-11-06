@@ -16,8 +16,9 @@ tracing = { version = "0.1", optional = true }
 # MediaMTX 연동 엔드포인트(`mediamtx` 모듈). dioxus가 쓰는 axum 0.8과 같은 크레이트로 합쳐진다.
 axum = { version = "0.8", features = ["multipart"], optional = true }
 form_urlencoded = { version = "1", optional = true }
-# 앱 시작 시 MediaMTX Control API 조회(`server::mediamtx_api`). dioxus-fullstack이 쓰는 reqwest 0.12와 합쳐진다.
-reqwest = { version = "0.12", default-features = false, features = ["json"], optional = true }
+# 앱 시작 시 MediaMTX Control API 조회(`server::mediamtx_api`)와 토스페이먼츠 결제 승인·조회(`server::toss_payments`, HTTPS).
+# dioxus-fullstack이 쓰는 reqwest 0.12(rustls-tls 포함)와 합쳐진다.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 # 채팅: 채널별 broadcast(`service::chat`)와 채팅 WebSocket 어댑터의 `select!`. dioxus 서버가 쓰는 tokio와 합쳐진다.
 # 비밀번호 해시는 `spawn_blocking`(rt)으로 비동기 작업 스레드 밖에서 계산한다.
 tokio = { version = "1", features = ["sync", "macros", "fs", "io-util", "rt"], optional = true }
@@ -101,4 +102,14 @@ required-features = ["server"]
 [[test]]
 name = "comments"
 path = "tests/comments.rs"
+required-features = ["server"]
+
+[[test]]
+name = "donations"
+path = "tests/donations.rs"
+required-features = ["server"]
+
+[[test]]
+name = "payments_http"
+path = "tests/payments_http.rs"
 required-features = ["server"]

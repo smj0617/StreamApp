@@ -5,27 +5,27 @@
 
 use dioxus::prelude::*;
 
-use crate::dto::{Comment, CommentList, CommentTarget};
+use crate::dto::{BroadcastTarget, Comment, CommentList};
 #[cfg(feature = "server")]
 use crate::server::{current_user, Service};
 
 /// 녹화방송 하나의 댓글 목록(오래된 순). 없는 녹화방송이면 404.
 #[get("/api/recordings/{id}/comments", service: Service)]
 pub async fn recording_comments(id: i64) -> Result<CommentList, ServerFnError> {
-    Ok(service.comments(CommentTarget::Recording(id)).await?)
+    Ok(service.comments(BroadcastTarget::Recording(id)).await?)
 }
 
 /// 라이브 한 회차의 댓글 목록(오래된 순). 없는 라이브면 404.
 #[get("/api/lives/{id}/comments", service: Service)]
 pub async fn live_comments(id: i64) -> Result<CommentList, ServerFnError> {
-    Ok(service.comments(CommentTarget::Live(id)).await?)
+    Ok(service.comments(BroadcastTarget::Live(id)).await?)
 }
 
 /// 댓글 쓰기: 로그인한 사용자를 작성자로 방송에 댓글을 단다. 만든 댓글을 돌려준다.
 /// 로그인하지 않았으면 401, 없는 방송이면 404, 내용 규칙 위반이면 400.
 #[post("/api/comments", service: Service, headers: dioxus::fullstack::HeaderMap)]
 pub async fn write_comment(
-    target: CommentTarget,
+    target: BroadcastTarget,
     content: String,
 ) -> Result<Comment, ServerFnError> {
     let user_id = current_user::require_user_id(&service, &headers).await?;

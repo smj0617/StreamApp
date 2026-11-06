@@ -3,7 +3,8 @@ use dioxus::prelude::*;
 mod views;
 
 use views::{
-    Broadcast, Home, Login, NewRecording, NotFound, RecordingDetail, Settings, Shell, SignUp, Watch,
+    Broadcast, DonationFail, DonationSuccess, Home, Login, NewRecording, NotFound, RecordingDetail,
+    Settings, Shell, SignUp, Watch,
 };
 
 /// 모든 페이지는 `Shell` 레이아웃(상단 바) 안에 그린다.
@@ -29,6 +30,12 @@ enum Route {
         NewRecording {},
         #[route("/recordings/:id")]
         RecordingDetail { id: i64 },
+        // 후원 결제창이 돌아오는 주소(`api::DONATION_SUCCESS_PATH`, `api::DONATION_FAIL_PATH`).
+        // 결제 서비스가 붙이는 쿼리(`paymentKey` 등)는 이름이 camelCase라 통째로 받아 화면에서 나눈다.
+        #[route("/donations/success?:..query")]
+        DonationSuccess { query: String },
+        #[route("/donations/fail?:..query")]
+        DonationFail { query: String },
         #[route("/:..segments")]
         NotFound { segments: Vec<String> },
 }
@@ -47,6 +54,7 @@ fn main() {
         Ok(dioxus::server::router(App)
             .merge(api::mediamtx::router(service.clone()))
             .merge(api::recording_files::router(service.clone()))
+            .merge(api::payment_webhook::router(service.clone()))
             .merge(api::whip::router(
                 service.clone(),
                 api::mediamtx::WEBRTC_BASE_URL,

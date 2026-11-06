@@ -41,3 +41,29 @@ pub const MIN_PASSWORD_CHARS: usize = 8;
 
 /// 비밀번호 최대 글자 수. 해시 계산이 너무 길어지지 않게 막는다.
 pub const MAX_PASSWORD_CHARS: usize = 64;
+
+/// 후원 최소 금액(원).
+pub const MIN_DONATION_WON: i64 = 1_000;
+
+/// 후원 최대 금액(원). 테스트 결제라도 한 번에 너무 큰 금액을 막는다.
+pub const MAX_DONATION_WON: i64 = 1_000_000;
+
+/// 화면의 후원 금액 바로 고르기 버튼(원).
+pub const DONATION_PRESETS_WON: [i64; 4] = [1_000, 5_000, 10_000, 50_000];
+
+/// 후원 메시지 최대 글자 수(앞뒤 공백을 지운 뒤). 메시지는 비워도 된다.
+pub const MAX_DONATION_MESSAGE_CHARS: usize = 100;
+
+/// 금액을 "12,345원"으로 쓴다.
+pub fn won_text(amount: i64) -> String {
+    let digits = amount.unsigned_abs().to_string();
+    let mut grouped = String::new();
+    for (i, digit) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            grouped.push(',');
+        }
+        grouped.push(digit);
+    }
+    let sign = if amount < 0 { "-" } else { "" };
+    format!("{sign}{grouped}원")
+}

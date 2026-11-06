@@ -14,8 +14,10 @@ mod channels;
 mod chat;
 mod comments;
 pub mod db;
+mod donations;
 mod ids;
 mod lives;
+pub mod payments;
 mod publish;
 mod recordings;
 mod users;
@@ -28,6 +30,8 @@ use sqlx::SqlitePool;
 
 pub use auth::SESSION_LIFETIME_MS;
 pub use chat::{ChatEvent, ChatSubscription};
+pub use donations::NoticeOutcome;
+pub use payments::{GatewayError, GatewayPayment, PaymentGateway, Payments};
 pub use publish::PublishingStatus;
 pub use recordings::DEFAULT_RECORDINGS_DIR;
 
@@ -45,6 +49,8 @@ pub struct AppService {
     recordings_dir: PathBuf,
     /// 녹화방송 영상 파일 최대 크기(바이트). 기본은 [`crate::rules::MAX_RECORDING_BYTES`]
     max_recording_bytes: u64,
+    /// 결제 서비스(토스페이먼츠 테스트 모드). 테스트 키가 설정되지 않았으면 `None`이고 후원을 받지 않는다.
+    payments: Option<Payments>,
 }
 
 impl AppService {
@@ -61,6 +67,7 @@ impl AppService {
             chat: chat::ChatHub::default(),
             recordings_dir: PathBuf::from(DEFAULT_RECORDINGS_DIR),
             max_recording_bytes: crate::rules::MAX_RECORDING_BYTES,
+            payments: None,
         }
     }
 
@@ -73,6 +80,12 @@ impl AppService {
     /// 녹화방송 영상 파일 최대 크기를 바꾼다. 테스트가 큰 파일 없이 크기 제한을 확인할 때 쓴다.
     pub fn with_max_recording_bytes(mut self, max: u64) -> Self {
         self.max_recording_bytes = max;
+        self
+    }
+
+    /// 결제 서비스를 끼운다. 끼우지 않으면 후원 주문을 만들지 않는다([`ServiceError::PaymentsNotConfigured`]).
+    pub fn with_payments(mut self, payments: Payments) -> Self {
+        self.payments = Some(payments);
         self
     }
 
@@ -152,6 +165,32 @@ pub enum ServiceError {
     CommentEmpty,
     #[error("댓글은 {max}자를 넘을 수 없습니다", max = crate::rules::MAX_COMMENT_CHARS)]
     CommentTooLong,
+    #[error("후원 결제가 설정되지 않았습니다(서버에 결제 서비스 테스트 키가 필요합니다)")]
+    PaymentsNotConfigured,
+    #[error("후원 금액은 {min} 이상 {max} 이하여야 합니다", min = crate::rules::won_text(crate::rules::MIN_DONATION_WON), max = crate::rules::won_text(crate::rules::MAX_DONATION_WON))]
+    DonationAmount,
+    #[error("후원 메시지는 {max}자를 넘을 수 없습니다", max = crate::rules::MAX_DONATION_MESSAGE_CHARS)]
+    DonationMessageTooLong,
+    #[error("자기 방송에는 후원할 수 없습니다")]
+    DonationToSelf,
+    #[error("없는 후원 주문입니다")]
+    UnknownDonation,
+    #[error("후원한 사람만 처리할 수 있습니다")]
+    NotDonationOwner,
+    /// 결제창이 돌려준 금액이 서버의 주문 금액과 다르다(화면에서 금액을 고침).
+    #[error("결제 금액이 주문과 다릅니다. 후원을 확정하지 않았습니다")]
+    DonationAmountMismatch,
+    /// 결제 서비스가 알려 준 결제(주문번호·금액·결제 키)가 서버의 주문과 다르다.
+    #[error("결제 정보가 주문과 다릅니다. 후원을 확정하지 않았습니다")]
+    PaymentMismatch,
+    /// 주문의 받는 채널이 방송의 채널과 다르다.
+    #[error("후원 받는 채널이 주문과 다릅니다. 후원을 확정하지 않았습니다")]
+    DonationRecipientMismatch,
+    /// 결제 서비스가 승인을 거절했다. 결제 서비스가 준 사유 그대로다.
+    #[error("결제가 승인되지 않았습니다: {0}")]
+    PaymentRejected(String),
+    #[error("결제 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요")]
+    PaymentServiceUnavailable,
 }
 
 impl ServiceError {
@@ -163,18 +202,23 @@ impl ServiceError {
         )
     }
 
-    /// 이 오류에 맞는 HTTP 상태 코드. 서버 잘못 500, 로그인 필요·로그인 실패 401, 주인·작성자가 아님 403,
-    /// 없는 녹화방송·라이브·댓글 404, 나머지 규칙 위반 400.
+    /// 이 오류에 맞는 HTTP 상태 코드. 서버 잘못 500, 로그인 필요·로그인 실패 401, 주인·작성자·후원한 사람이
+    /// 아님 403, 없는 녹화방송·라이브·댓글·후원 주문 404, 결제 설정 없음·결제 서비스 연결 실패 503, 나머지
+    /// 규칙 위반 400.
     pub fn status_code(&self) -> u16 {
         match self {
             ServiceError::Database(_) | ServiceError::File(_) | ServiceError::PasswordHash(_) => {
                 500
             }
             ServiceError::NotSignedIn | ServiceError::LoginFailed => 401,
-            ServiceError::NotBroadcastOwner | ServiceError::NotCommentAuthor => 403,
+            ServiceError::NotBroadcastOwner
+            | ServiceError::NotCommentAuthor
+            | ServiceError::NotDonationOwner => 403,
             ServiceError::UnknownRecording
             | ServiceError::UnknownLive
-            | ServiceError::UnknownComment => 404,
+            | ServiceError::UnknownComment
+            | ServiceError::UnknownDonation => 404,
+            ServiceError::PaymentsNotConfigured | ServiceError::PaymentServiceUnavailable => 503,
             _ => 400,
         }
     }

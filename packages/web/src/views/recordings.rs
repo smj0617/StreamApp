@@ -1,10 +1,11 @@
-use api::dto::{CommentTarget, RecordingPage};
+use api::dto::{BroadcastTarget, RecordingPage};
 use api::rules::{MAX_RECORDING_BYTES, MAX_RECORDING_MB, MAX_TITLE_CHARS, RECORDING_EXTENSIONS};
 use api::{RECORDING_UPLOAD_PATH, UPLOAD_FILE_FIELD, UPLOAD_TITLE_FIELD};
 use dioxus::prelude::*;
 use serde::Deserialize;
 
 use super::comments::Comments;
+use super::donations::Donations;
 use super::script_with_element_id;
 use super::shell::{rejection_reason, CurrentUser, LoginRequired};
 use crate::Route;
@@ -297,9 +298,15 @@ fn RecordingView(page: RecordingPage) -> Element {
         }
         SuspenseBoundary {
             fallback: |_| rsx! {
+                p { class: "muted", "후원 내역을 불러오는 중…" }
+            },
+            Donations { target: BroadcastTarget::Recording(page.id) }
+        }
+        SuspenseBoundary {
+            fallback: |_| rsx! {
                 p { class: "muted", "댓글을 불러오는 중…" }
             },
-            Comments { target: CommentTarget::Recording(page.id) }
+            Comments { target: BroadcastTarget::Recording(page.id) }
         }
     }
 }

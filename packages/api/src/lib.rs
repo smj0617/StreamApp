@@ -14,6 +14,8 @@
 //!   - [`mediamtx`]: MediaMTX가 부르는 내부 HTTP 엔드포인트(Dioxus 없는 axum 라우터). 보조 테스트 경계다.
 //!   - [`recording_files`]: 녹화방송 영상 파일 올리기와 내주기(Dioxus 없는 axum 라우터). 보조 테스트 경계다.
 //!   - [`whip`]: 휴대폰 방송 송출 시작·종료를 MediaMTX로 넘기는 중계(Dioxus 없는 axum 라우터). 보조 테스트 경계다.
+//!   - [`payment_webhook`]: 결제 서비스(토스페이먼츠)의 결제 상태 변경 통지를 받는 웹훅(Dioxus 없는 axum 라우터).
+//!     보조 테스트 경계다.
 
 pub mod dto;
 pub mod rules;
@@ -22,6 +24,7 @@ mod broadcast;
 mod channels;
 mod chat;
 mod comments;
+mod donations;
 mod lives;
 mod recordings;
 mod users;
@@ -30,6 +33,7 @@ pub use broadcast::*;
 pub use channels::*;
 pub use chat::*;
 pub use comments::*;
+pub use donations::*;
 pub use lives::*;
 pub use recordings::*;
 pub use users::*;
@@ -37,6 +41,8 @@ pub use watch::*;
 
 #[cfg(feature = "server")]
 pub mod mediamtx;
+#[cfg(feature = "server")]
+pub mod payment_webhook;
 #[cfg(feature = "server")]
 pub mod recording_files;
 #[cfg(feature = "server")]

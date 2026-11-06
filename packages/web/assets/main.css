@@ -696,3 +696,98 @@ body {
 .comments button.link-button.danger {
   color: #d93025;
 }
+
+/* ---- 후원 (과제 ④) ---- */
+
+.donations,
+.donation-result {
+  max-width: 960px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bar-bg);
+}
+
+.donation-total,
+.donation-amount {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.donations button,
+.donation-result button {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.donations button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.donations button.secondary {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.donate-recipient {
+  margin: 0 0 8px;
+}
+
+.donate-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.donate-amount {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.donate-amount input {
+  width: 10rem;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.donate-form textarea {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+}
+
+.donation-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.donation {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.donation-done {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
