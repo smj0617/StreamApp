@@ -2,6 +2,7 @@ mod auth;
 mod broadcast;
 mod chat;
 mod comments;
+mod donations;
 mod hls_player;
 mod home;
 mod not_found;
@@ -12,6 +13,7 @@ mod watch;
 
 pub use auth::{Login, SignUp};
 pub use broadcast::Broadcast;
+pub use donations::{DonationFail, DonationSuccess};
 pub use home::Home;
 pub use not_found::NotFound;
 pub use recordings::{NewRecording, RecordingDetail};

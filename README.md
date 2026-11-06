@@ -6,7 +6,7 @@
 
 ## 과제: 치지직 만들기
 
-과제의 각 단계는 앞 단계 기능을 유지한 채 이 저장소에서 이어서 확장한다. 실행 방법은 [로컬에서 실행하기](#로컬에서-실행하기-windows), 환경변수는 [환경변수](#환경변수)에 있다.
+과제의 각 단계는 앞 단계 기능을 유지한 채 이 저장소에서 이어서 확장한다(①→②→③→④). 실행 방법은 [로컬에서 실행하기](#로컬에서-실행하기-windows), 환경변수는 [환경변수](#환경변수)에 있다.
 
 ### ① 인증·인가 없는 녹화방송
 
@@ -135,7 +135,102 @@ PC만으로 미리 확인하려면 PC 브라우저에서 `http://localhost:8090/
 
 자동 테스트: 회원가입·로그인·세션(만료·로그아웃 포함)은 [tests/auth.rs](packages/api/tests/auth.rs), 녹화방송 주인 권한은 [tests/recordings.rs](packages/api/tests/recordings.rs) 끝부분, 댓글과 작성자 권한은 [tests/comments.rs](packages/api/tests/comments.rs), 세션 쿠키 없는 올리기(401)는 [tests/recording_http.rs](packages/api/tests/recording_http.rs), 송출 시작·종료의 401·403·404는 [tests/whip_http.rs](packages/api/tests/whip_http.rs)가 확인한다.
 
-## 현황 (2026-11-05)
+### ④ 도네이션
+
+③까지의 기능(녹화방송, 휴대폰 송출·시청, 회원가입·로그인, 방송 주인 권한 검사, 댓글)은 그대로이고, 방송마다 방송자(채널 주인)에게 후원하는 기능을 더했다. 결제는 **토스페이먼츠 테스트 모드**로 하며 실제 돈은 나가지 않는다. 결정 근거는 [ADR 0006](docs/adr/0006-donations-confirmed-by-server-with-toss-test-mode.md).
+
+**구현 범위**
+
+- **후원 대상·금액 선택**: 녹화방송 상세 `/recordings/<번호>`와 라이브 시청 페이지 `/live/<채널ID>`에 "후원" 칸이 있다. 받는 사람은 그 방송의 채널 주인으로 표시되고, 금액은 1,000·5,000·10,000·50,000원 버튼이나 직접 입력(1,000~1,000,000원), 메시지는 0~100자다. 로그인하지 않았으면 로그인 안내가, 자기 방송이면 "내 방송에는 후원할 수 없습니다"가 보인다.
+- **테스트 결제 요청** `POST /api/donations/prepare`: 로그인한 사용자만(401). 서버가 방송에서 받는 채널을 정하고 금액·메시지를 확인해 무작위 주문번호로 `pending` 주문을 DB에 만든다. 화면은 돌려받은 주문 그대로 토스페이먼츠 결제창(JS SDK v2, `requestPayment`)을 연다. 금액을 화면에서 고쳐도 서버의 주문 금액은 바뀌지 않는다.
+- **서버의 승인 확인 후 확정** `POST /api/donations/confirm`: 결제창이 성공 주소 `/donations/success?paymentKey=…&orderId=…&amount=…`로 돌아오면, 화면은 성공이라고 표시하지 않고 이 값을 서버에 넘긴다. 서버는
+  1. 주문한 사람인지(아니면 403),
+  2. 돌아온 금액이 주문 금액과 같은지(다르면 결제 승인을 요청하지 않고 주문을 `failed`로 닫는다),
+  3. 시크릿 키로 토스페이먼츠 결제 승인 API(`POST /v1/payments/confirm`, 주문 금액, 주문번호를 멱등키로)를 부르고,
+  4. 돌려받은 결제의 주문번호·금액·상태(`DONE`)가 주문과 같은지,
+  5. 받는 채널이 지금도 그 방송의 채널이고 후원한 사람 자신이 아닌지
+
+  를 확인한 뒤에만 `confirmed`로 바꾼다. 결과 페이지는 서버가 확인한 결과("철수님에게 5,000원 후원을 확정했습니다")만 보여 준다.
+  - 코드: 확정 경로 [service/donations.rs](packages/api/src/service/donations.rs)의 `confirm_donation`·`settle`, 결제 승인·조회 클라이언트 [server/toss_payments.rs](packages/api/src/server/toss_payments.rs), 서버 함수 [donations.rs](packages/api/src/donations.rs), 화면 [views/donations.rs](packages/web/src/views/donations.rs)(클라이언트 키가 `test_gck_`면 주문서형 결제 UI, `test_ck_`면 결제창), 마이그레이션 [0005](packages/api/migrations/0005_donations.sql).
+- **승인 통지 중복 방지**: 같은 승인 통지가 여러 번 와도 한 번만 적립한다.
+  - 저장 구조: `donations.order_id`와 `donations.payment_key`가 UNIQUE라 한 결제가 두 후원이 될 수 없다. 상태는 `pending → confirmed / canceled / failed`이고, `confirmed`일 때만 `payment_key`·`confirmed_at_ms`가 있다(CHECK 제약).
+  - 확정은 `UPDATE … SET status = 'confirmed' … WHERE order_id = ? AND status <> 'confirmed'` 한 번이다. 두 번째 통지는 바뀌는 행이 없어 "이미 확정된 후원입니다"로 돌아가고 합계는 그대로다.
+  - 이미 `confirmed`인 주문에 같은 승인 값이 다시 오면(성공 페이지 새로고침) 결제 서비스를 다시 부르지 않는다. 동시에 두 요청이 와도 하나만 확정되고, 결제 서비스가 `ALREADY_PROCESSED_PAYMENT`를 주면 결제를 조회해 같은 결제인지 확인한다.
+  - **웹훅** `POST /api/payments/toss/webhook`(`PAYMENT_STATUS_CHANGED`): 본문은 믿지 않고 결제 키로 결제를 조회해 같은 확정 경로를 탄다. 성공 주소와 웹훅이 모두 와도, 웹훅이 재전송되어도 한 번만 적립한다. 조회 결과가 만료·취소면 기다리던 주문을 `failed`로 닫는다. 결제 서비스에 연결하지 못하면 500을 돌려 결제 서비스가 다시 보내게 한다. 코드: [payment_webhook.rs](packages/api/src/payment_webhook.rs).
+- **취소·실패**: PC에서 결제창을 닫으면(`USER_CANCEL`) 화면이 `POST /api/donations/abandon`으로 주문을 `canceled`로 닫는다. 실패 주소 `/donations/fail?code=…&message=…&donation=<주문번호>`로 돌아오면 `PAY_PROCESS_CANCELED`는 `canceled`, 그 밖은 `failed`로 닫고 사유를 보여 준다. 화면의 실패 표시로 이미 `confirmed`인 후원을 되돌리지는 않는다.
+- **방송별 후원 내역과 합계** `GET /api/recordings/<번호>/donations`, `GET /api/lives/<라이브ID>/donations`: 그 방송에서 확정된 후원만 최근 확정순(후원자 닉네임, 금액, 메시지, 확정 후 지난 시간)으로 보이고, 제목에 "후원 N건 · 합계 X원"이 보인다. 결제를 기다리는 주문과 취소·실패한 주문은 들어가지 않는다. 라이브 후원은 그 라이브 회차에 붙어 같은 채널의 녹화방송 합계와 섞이지 않는다. 로그인하지 않아도 볼 수 있다.
+- **결제 설정 없음**: 테스트 키 환경변수가 없거나 `test_`로 시작하지 않으면 결제를 켜지 않는다. 이때 후원 내역은 보이고 후원 칸에는 설정 안내가 보이며, 주문 요청은 503이다.
+- **삭제와 기록**: 녹화방송을 지워도 후원 기록은 남는다(`recording_id`만 비고 받는 채널은 그대로).
+- 이번 단계에서 하지 않은 것: 결제 취소(환불)·부분 취소, 금액이 어긋난 승인 결제의 자동 취소(로그와 `failed` 기록만 남김), 가상계좌, 채팅·화면 후원 알림, 정산, 채널 전체 후원 합계, 내 후원 내역 페이지.
+
+**환경변수와 테스트 키 준비**
+
+1. 테스트 키 한 쌍을 준비한다. 두 종류 모두 된다.
+   - **주문서형(결제위젯) 키** `test_gck_…`·`test_gsk_…`: 토스페이먼츠 개발자센터의 주문서형 연동 가이드에 나오는 **문서용 테스트 키**를 가입 없이 그대로 쓸 수 있다. 후원 칸 아래에 토스 결제수단·약관 UI와 "결제하기"·"취소" 버튼이 그려진다.
+   - **API 개별 연동 키** `test_ck_…`·`test_sk_…`: [개발자센터 API 키 메뉴](https://developers.tosspayments.com/my/api-keys)에서 가입 후 확인한다(전자결제 계약 없이 된다). "후원하기"를 누르면 카드 결제창이 바로 열린다.
+
+   클라이언트 키와 시크릿 키는 같은 종류의 짝이어야 한다.
+2. 앱을 띄우는 PowerShell 창에서 환경변수를 정하고 `dev.ps1`을 실행한다. 시크릿 키는 저장소나 README에 적지 않는다.
+
+   ```powershell
+   $env:STREAMAPP_TOSS_CLIENT_KEY = "test_gck_..."   # 또는 test_ck_...
+   $env:STREAMAPP_TOSS_SECRET_KEY = "test_gsk_..."   # 또는 test_sk_...
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 -Port 8090
+   ```
+
+   로그에 `후원 결제: 토스페이먼츠 테스트 모드`가 찍히면 준비된 것이다. 키가 없으면 `후원 결제를 끕니다` 경고가 찍힌다.
+3. (선택) 웹훅: 개발자센터 → 웹훅에서 `PAYMENT_STATUS_CHANGED`로 `https://<공개 주소>/api/payments/toss/webhook`을 등록한다. 로컬 PC에는 공개 주소가 없으므로 ②처럼 `cloudflared tunnel --url http://127.0.0.1:8090`로 받은 `https://….trycloudflare.com`을 쓴다. 웹훅 없이도 성공 주소로 확정된다.
+
+**직접 확인 절차(테스트 결제 성공·실패·취소, 승인 통지 중복)**
+
+준비: 위 환경변수로 앱을 띄우고 `http://localhost:8090`을 연다. 철수(`test1234`)로 로그인해 녹화방송을 하나 올리고(①의 절차), 로그아웃한 뒤 영희(`test1234`)로 로그인해 그 녹화방송 상세를 연다. 후원 칸에 "받는 사람 철수"와 "후원 0건 · 합계 0원"이 보인다.
+
+1. **테스트 결제 성공**: 5,000원을 고르고 메시지를 적어 "5,000원 후원하기"를 누른다. 주문서형 키면 그려진 결제 UI에서 결제수단(예: 신용·체크카드 → 카드사)을 고르고 "5,000원 결제하기"를 누른다. 토스페이먼츠 테스트 결제창에서 카드사 인증까지 진행한다(테스트 환경이라 실제로 결제되지 않는다. 카드사에 따라 앱·간편 로그인을 요구하므로 본인이 쓸 수 있는 방식을 고른다). `/donations/success?...`로 돌아와 "서버가 결제 승인을 확인하는 중입니다…" 다음에 "철수님에게 5,000원 후원을 확정했습니다"가 보인다. "방송으로 돌아가기"를 누르면 "후원 1건 · 합계 5,000원"과 "영희 5,000원 · 방금 전"이 보인다. 개발자센터 → 결제내역에도 테스트 결제가 보인다.
+2. **승인 통지 중복(성공 주소 다시 받기)**: 1번의 결과 페이지에서 새로고침(F5)한다. 같은 `paymentKey`·`orderId`·`amount`가 서버에 다시 가지만 "이미 확정된 후원입니다. 같은 결제를 다시 받아도 한 번만 적립합니다."가 보이고, 방송으로 돌아가면 여전히 "후원 1건 · 합계 5,000원"이다.
+3. **승인 통지 중복(웹훅 재전송)**: 웹훅을 등록했다면 개발자센터 → 웹훅 → 전송 기록에서 1번 결제의 기록을 골라 "다시 시도"를 두세 번 누른다. 앱 로그에 `이미 확정된 결제의 통지를 다시 받았습니다(다시 적립하지 않음)`이 찍히고 합계는 그대로다. 웹훅을 등록하지 않았다면 직접 보낸다(1번 결제의 `paymentKey`는 결과 페이지 주소창에 있다). 본문의 금액·주문번호는 무시하고 결제 서비스 조회 결과로 처리하므로, 금액을 바꿔 보내도 합계가 바뀌지 않는다.
+
+   ```powershell
+   $body = '{"eventType":"PAYMENT_STATUS_CHANGED","data":{"paymentKey":"<1번의 paymentKey>","orderId":"x","totalAmount":999999,"status":"DONE"}}'
+   1..3 | ForEach-Object { (Invoke-WebRequest -Method Post -Uri http://localhost:8090/api/payments/toss/webhook -ContentType "application/json" -Body $body).StatusCode }
+   ```
+
+   세 번 모두 `200`이고 방송의 합계는 그대로 5,000원이다.
+4. **테스트 결제 취소**: 다시 "후원하기" → 결제창에서 닫기(X)를 누른다. 주문서형 키면 결제 UI가 남아 다시 고를 수 있고, 결제 UI의 "취소"를 누르면 후원 칸에 "결제를 취소했습니다. 후원하지 않았습니다."가 보이며 주문이 `canceled`로 닫힌다. 결제창 방식(API 개별 연동 키)은 결제창을 닫으면 바로 같은 문구가 보인다. 휴대폰(페이지 이동 방식)에서는 `/donations/fail` 페이지에 "후원 결제 취소"가 보인다. 합계는 그대로다.
+5. **테스트 결제 실패**:
+   - 결제창의 실패: 결제창 진행 중 실패하면 결제창이 `/donations/fail?code=…&message=…`로 보내고 "후원 결제 실패"와 사유가 보이며 주문은 `failed`로 닫힌다.
+   - 승인 만료: 결제창에서 인증을 마치고 돌아온 성공 주소를 복사해 두었다가, 10분 넘게 지난 뒤 연다(결제 서비스는 인증 후 10분 안에 승인하지 않은 결제를 만료시킨다). "후원을 확정하지 못했습니다: 결제가 승인되지 않았습니다: …"가 보이고 합계는 그대로다.
+   - 금액 조작과 실패 주소: 영희로 로그인한 창의 개발자 도구 콘솔에서 아래를 실행한다. 결제창을 열지 않고 주문만 만든 뒤 (1) 금액을 100원으로 고쳐 승인을 요청하면 서버가 결제 서비스에 묻지도 않고 `400 결제 금액이 주문과 다릅니다. 후원을 확정하지 않았습니다`로 거절하고, (2) 다른 주문으로 실패 주소를 열면 "결제에 실패했습니다: 테스트실패 (PAY_PROCESS_ABORTED)"가 보인다. 두 경우 모두 합계는 그대로다.
+
+     ```js
+     const post = async (url, body) => { const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); return r.status + " " + ((await r.json()).data?.ServerError?.message ?? ""); };
+     const order = async () => (await fetch("/api/donations/prepare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target: { Recording: 1 }, amount: 5000, message: "" }) })).json();
+     const a = await order();
+     await post("/api/donations/confirm", { approval: { payment_key: "tampered", order_id: a.order_id, amount: 100 } });
+     const b = await order();
+     location.href = `/donations/fail?code=PAY_PROCESS_ABORTED&message=${encodeURIComponent("테스트실패")}&donation=${b.order_id}`;
+     ```
+
+6. **서버 권한 검사**: 로그아웃한 창의 콘솔에서 아래 첫 줄을 실행하면 `401 로그인이 필요합니다`다. 로그인한 창에서 둘째 줄은 `400 후원 금액은 1,000원 이상 1,000,000원 이하여야 합니다`다. 철수(녹화방송 주인)는 후원 칸 대신 "내 방송에는 후원할 수 없습니다"가 보이고, 같은 요청을 보내면 `400 자기 방송에는 후원할 수 없습니다`다. 영희가 만든 주문번호로 민수가 `/api/donations/confirm`을 부르면 `403 후원한 사람만 처리할 수 있습니다`다.
+
+   ```js
+   const post = async (url, body) => { const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); return r.status + " " + ((await r.json()).data?.ServerError?.message ?? ""); };
+   await post("/api/donations/prepare", { target: { Recording: 1 }, amount: 5000, message: "" });
+   await post("/api/donations/prepare", { target: { Recording: 1 }, amount: 500, message: "" });
+   ```
+
+7. **라이브 후원**: 철수로 휴대폰 방송(②)이나 테스트 송출을 시작하고, 영희로 시청 페이지 `/live/<채널ID>`의 후원 칸에서 1번처럼 후원한다. 그 라이브의 합계에만 더해지고 녹화방송 합계와 섞이지 않는다.
+8. **이전 단계 기능**: 녹화방송 등록·재생, 휴대폰 송출·시청, 회원가입·로그인·로그아웃, 댓글 쓰기·수정·삭제와 방송 주인 권한 검사(③의 절차)가 그대로 된다.
+
+자동 테스트: [tests/donations.rs](packages/api/tests/donations.rs)(21개)가 가짜 결제 서비스로 주문 규칙(금액 범위, 메시지 길이, 자기 방송, 없는 방송, 결제 설정 없음), 확정과 방송별 내역·합계, 같은 승인 두 번·동시 승인·웹훅 반복·웹훅 뒤 성공 주소에서 한 번만 적립, 금액 조작·결제 서비스와 금액 불일치·결제 거절·연결 실패·남의 주문, 취소·실패 기록, 만료 통지, 라이브 후원, 녹화방송 삭제 뒤 기록 유지를 확인한다. [tests/payments_http.rs](packages/api/tests/payments_http.rs)(7개)는 가짜 토스페이먼츠 서버로 승인 요청의 인증 헤더·멱등키·본문, `ALREADY_PROCESSED_PAYMENT` 뒤 조회, 거절·처리 중·서버 오류 구분, 웹훅 반복 통지가 한 번만 적립되는지를 확인한다. 실제 토스페이먼츠에는 접속하지 않는다.
+
+## 현황 (2026-11-06)
+
+### 과제 ④: 도네이션 — 구현
+
+- 자동 테스트 180개 통과(후원 앱 서비스 21개, 결제 서비스·웹훅 HTTP 7개 추가), clippy·fmt·wasm 빌드 통과.
+- 실제 토스페이먼츠(문서용 주문서형 테스트 키)로 Chrome에서 확인: 영희 로그인 → 녹화방송 상세 "5,000원 후원하기" → 토스 결제수단·약관 UI("테스트 환경이에요" 표시) → 신용·체크카드 → 국민카드 → "5,000원 결제하기" → 토스 테스트 결제창(KB 화면) 열림 → 결제창 닫기 시 결제 UI 유지 → "취소"로 주문 취소("결제를 취소했습니다. 후원하지 않았습니다.", 합계 0원). 서버의 시크릿 키 인증도 실제 승인 API로 확인했다(가짜 결제 키는 "결제 진행 데이터가 존재하지 않습니다"로 거절, 확정 안 됨).
+- 이전 단계 DB 복사본으로 확인: 비로그인 주문 401, 금액 조작 승인 요청 400(결제 서비스 호출 없음), 500원 주문 400, 실패 주소에서 주문이 `Failed`(사유 표시)로 닫힘, 철수(주인)에게는 후원 칸 대신 "내 방송에는 후원할 수 없습니다"와 주문 요청 400.
+- 확인하지 못한 것: 카드사 인증을 끝낸 실제 승인 성공과 그 뒤의 새로고침·웹훅 중복(카드사 인증 화면이 휴대폰 번호·주민등록번호 로그인을 요구해 자동화로 진행하지 않음, 가짜 결제 서비스·가짜 토스 서버 테스트로만 확인), 실제 웹훅 수신, 휴대폰 결제창, 라이브 시청 페이지의 후원 칸.
 
 ### 과제 ③: 인증·인가와 댓글 — 구현
 
@@ -188,10 +283,10 @@ PC만으로 미리 확인하려면 PC 브라우저에서 `http://localhost:8090/
 
 ```text
 packages/
-├── api/                 # 서버 함수, 앱 서비스(Dioxus 비의존), MediaMTX 연동·녹화방송 파일·휴대폰 방송 중계 axum Router
-│   ├── migrations/      # 0001 사용자·채널, 0002 라이브, 0003 녹화방송, 0004 비밀번호·세션·댓글 (기존 파일은 수정하지 말고 새 번호로 추가)
-│   └── tests/           # 앱 서비스(메모리 SQLite), MediaMTX 연동·녹화방송 파일·휴대폰 방송 중계 HTTP 테스트
-└── web/                 # 화면: 홈, 시청 페이지, 휴대폰 방송, 녹화방송 등록·상세(관리·댓글), 내 채널 설정, 로그인·회원가입
+├── api/                 # 서버 함수, 앱 서비스(Dioxus 비의존), MediaMTX 연동·녹화방송 파일·휴대폰 방송 중계·결제 웹훅 axum Router, 토스페이먼츠 클라이언트
+│   ├── migrations/      # 0001 사용자·채널, 0002 라이브, 0003 녹화방송, 0004 비밀번호·세션·댓글, 0005 후원 (기존 파일은 수정하지 말고 새 번호로 추가)
+│   └── tests/           # 앱 서비스(메모리 SQLite, 가짜 결제 서비스), MediaMTX 연동·녹화방송 파일·휴대폰 방송 중계·결제 서비스 HTTP 테스트
+└── web/                 # 화면: 홈, 시청 페이지(후원·댓글), 휴대폰 방송, 녹화방송 등록·상세(관리·후원·댓글), 후원 결과, 내 채널 설정, 로그인·회원가입
 scripts/                 # dev.ps1, test-publish.ps1
 tools/mediamtx/          # MediaMTX v1.21.3 설정 (실행 파일은 dev.ps1이 .tools\로 내려받음)
 ```
@@ -218,13 +313,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 -Port 8090
 
 ### 환경변수
 
-모두 선택 사항이다. 정하지 않으면 아래 기본값을 쓴다(경로는 앱을 실행한 폴더 기준, `dev.ps1`은 레포 루트). 세션 서명 키 같은 비밀 값은 필요 없다(세션은 DB에 둔다). 기본 비밀번호는 로컬 확인용 시험 값이며, 실제 비밀번호를 여기에 적어 커밋하지 않는다.
+모두 선택 사항이다. 정하지 않으면 아래 기본값을 쓴다(경로는 앱을 실행한 폴더 기준, `dev.ps1`은 레포 루트). 세션 서명 키 같은 비밀 값은 필요 없다(세션은 DB에 둔다). 기본 비밀번호는 로컬 확인용 시험 값이며, 실제 비밀번호를 여기에 적어 커밋하지 않는다. 후원 결제(④)는 토스페이먼츠 **테스트 키**를 넣어야 켜진다. 키는 개발자센터에서 각자 확인해 셸에서만 정하고 저장소에 적지 않는다(아래 키 값은 자리 표시다).
 
 ```powershell
 $env:STREAMAPP_DB = "data/streamapp.db"                  # SQLite DB 파일
 $env:STREAMAPP_RECORDINGS_DIR = "data/recordings"        # 녹화방송 영상 파일 폴더
 $env:STREAMAPP_MEDIAMTX_API = "http://127.0.0.1:9997"    # MediaMTX Control API(앱 시작 시 송출 상태 맞추기)
 $env:STREAMAPP_DEFAULT_PASSWORD = "test1234"             # 빈 DB의 기본 사용자와 이전 단계(비밀번호 없는) 사용자에게 넣을 시험용 비밀번호(8~64자)
+$env:STREAMAPP_TOSS_CLIENT_KEY = "test_ck_..."           # 토스페이먼츠 API 개별 연동 테스트 클라이언트 키(브라우저 결제창용). 없으면 후원 결제를 끈다
+$env:STREAMAPP_TOSS_SECRET_KEY = "test_sk_..."           # 토스페이먼츠 테스트 시크릿 키(서버의 결제 승인·조회용, 비밀 값). test_로 시작하지 않으면 받지 않는다
+# $env:STREAMAPP_TOSS_API = "https://api.tosspayments.com" # 결제 서비스 API 주소(기본값 그대로 둔다)
 ```
 
 ## 테스트

@@ -4,7 +4,7 @@
 //! 세션으로 한다). 채팅과 달리 DB에 남는다.
 
 use super::{AppService, ServiceError};
-use crate::dto::{Comment, CommentList, CommentTarget};
+use crate::dto::{BroadcastTarget, Comment, CommentList};
 use crate::rules::MAX_COMMENT_CHARS;
 
 #[derive(sqlx::FromRow)]
@@ -39,7 +39,7 @@ const SELECT_COMMENT: &str =
 impl AppService {
     /// 방송 하나의 댓글 목록(오래된 순). 없는 녹화방송·라이브면 [`ServiceError::UnknownRecording`]·
     /// [`ServiceError::UnknownLive`].
-    pub async fn comments(&self, target: CommentTarget) -> Result<CommentList, ServiceError> {
+    pub async fn comments(&self, target: BroadcastTarget) -> Result<CommentList, ServiceError> {
         self.check_target_exists(target).await?;
         let (column, id) = target_column(target);
         let rows = sqlx::query_as::<_, CommentRow>(&format!(
@@ -62,7 +62,7 @@ impl AppService {
     pub async fn write_comment(
         &self,
         user_id: i64,
-        target: CommentTarget,
+        target: BroadcastTarget,
         content: &str,
     ) -> Result<Comment, ServiceError> {
         let content = valid_comment(content)?;
@@ -147,10 +147,10 @@ impl AppService {
         }
     }
 
-    async fn check_target_exists(&self, target: CommentTarget) -> Result<(), ServiceError> {
+    async fn check_target_exists(&self, target: BroadcastTarget) -> Result<(), ServiceError> {
         let (table, id, missing) = match target {
-            CommentTarget::Recording(id) => ("recordings", id, ServiceError::UnknownRecording),
-            CommentTarget::Live(id) => ("lives", id, ServiceError::UnknownLive),
+            BroadcastTarget::Recording(id) => ("recordings", id, ServiceError::UnknownRecording),
+            BroadcastTarget::Live(id) => ("lives", id, ServiceError::UnknownLive),
         };
         let found = sqlx::query_scalar::<_, i64>(&format!("SELECT id FROM {table} WHERE id = ?"))
             .bind(id)
@@ -161,10 +161,10 @@ impl AppService {
 }
 
 /// 댓글이 붙는 열 이름과 방송 ID. 열 이름은 이 두 값뿐이라 SQL에 그대로 넣어도 된다.
-fn target_column(target: CommentTarget) -> (&'static str, i64) {
+fn target_column(target: BroadcastTarget) -> (&'static str, i64) {
     match target {
-        CommentTarget::Recording(id) => ("recording_id", id),
-        CommentTarget::Live(id) => ("live_id", id),
+        BroadcastTarget::Recording(id) => ("recording_id", id),
+        BroadcastTarget::Live(id) => ("live_id", id),
     }
 }
 

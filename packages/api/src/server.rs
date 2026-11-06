@@ -16,6 +16,7 @@
 pub mod chat_socket;
 pub mod current_user;
 pub mod mediamtx_api;
+pub mod toss_payments;
 
 use std::path::PathBuf;
 
@@ -38,7 +39,8 @@ pub const DEFAULT_PASSWORD: &str = "test1234";
 /// 서버 함수가 앱 서비스를 꺼내는 추출자. `main`에서 `.layer(Extension(service))`로 붙인다.
 pub type Service = dioxus::server::axum::Extension<AppService>;
 
-/// 앱 시작 준비: DB 연결, 마이그레이션 적용, 녹화방송 폴더 준비, (사용자가 없으면) 기본 데이터 생성,
+/// 앱 시작 준비: DB 연결, 마이그레이션 적용, 녹화방송 폴더 준비, 결제 서비스(테스트 키가 있으면) 연결,
+/// (사용자가 없으면) 기본 데이터 생성,
 /// 비밀번호 없는 이전 단계 사용자에게 기본 비밀번호 넣기, MediaMTX의 실제 송출에 라이브 맞추기.
 pub async fn init_from_env() -> anyhow::Result<AppService> {
     let path = std::env::var_os(DB_PATH_ENV)
@@ -53,7 +55,10 @@ pub async fn init_from_env() -> anyhow::Result<AppService> {
     std::fs::create_dir_all(&recordings_dir)?;
     tracing::info!("녹화방송 폴더: {}", recordings_dir.display());
 
-    let service = AppService::new(pool).with_recordings_dir(recordings_dir);
+    let mut service = AppService::new(pool).with_recordings_dir(recordings_dir);
+    if let Some(payments) = toss_payments::payments_from_env() {
+        service = service.with_payments(payments);
+    }
     let default_password =
         std::env::var(DEFAULT_PASSWORD_ENV).unwrap_or_else(|_| DEFAULT_PASSWORD.to_owned());
     if service.seed_default_users(&default_password).await? {

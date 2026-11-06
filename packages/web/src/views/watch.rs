@@ -1,8 +1,9 @@
-use api::dto::{CommentTarget, WatchPage};
+use api::dto::{BroadcastTarget, WatchPage};
 use dioxus::prelude::*;
 
 use super::chat::Chat;
 use super::comments::Comments;
+use super::donations::Donations;
 use super::hls_player::HlsPlayer;
 use super::shell::rejection_reason;
 use crate::Route;
@@ -81,12 +82,19 @@ fn WatchChannel(page: WatchPage) -> Element {
                 p { class: "watch-channel", "{page.channel_name}" }
             }
             Chat { channel_id: page.channel_id.clone(), ended, live_title: title }
+            // 후원은 이 라이브 회차에 붙고, 서버가 결제 승인을 확인한 것만 내역과 합계에 들어간다.
+            SuspenseBoundary {
+                fallback: |_| rsx! {
+                    p { class: "muted", "후원 내역을 불러오는 중…" }
+                },
+                Donations { target: BroadcastTarget::Live(live.id) }
+            }
             // 채팅은 흘러가고 저장하지 않지만, 댓글은 이 라이브 회차에 남는다.
             SuspenseBoundary {
                 fallback: |_| rsx! {
                     p { class: "muted", "댓글을 불러오는 중…" }
                 },
-                Comments { target: CommentTarget::Live(live.id) }
+                Comments { target: BroadcastTarget::Live(live.id) }
             }
         },
         None => rsx! {
