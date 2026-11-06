@@ -9,50 +9,95 @@ use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::recordings::ago_text;
+use super::script_with_element_id;
 use super::shell::{rejection_reason, CurrentUser, LoginRequired};
 use crate::Route;
 
 /// 토스페이먼츠 JavaScript SDK v2(결제창). 토스페이먼츠가 버전 경로 하나로만 제공한다.
 const TOSS_SDK: &str = "https://js.tosspayments.com/v2/standard";
 
-/// 결제창 열기. 서버가 만든 주문([`DonationOrder`])을 `dioxus.send`로 받아 그대로 결제를 요청한다
-/// (금액·주문번호를 JS 문자열에 직접 넣지 않는다). 결제창은 성공·실패 주소로 페이지를 옮기므로, 이 스크립트가
-/// 값을 돌려주는 것은 결제창을 열지 못했거나 PC에서 결제창을 닫았을 때(`USER_CANCEL`)뿐이다.
-const REQUEST_PAYMENT_JS: &str = r#"
+/// 주문형 결제 UI(결제위젯)를 그릴 빈 영역의 id. 스크립트가 이 안을 채우고 비운다(rsx는 자식을 두지 않는다).
+const CHECKOUT_ID: &str = "donation-checkout";
+
+/// 결제 요청. 서버가 만든 주문([`DonationOrder`])을 `dioxus.send`로 받아 그대로 결제를 요청한다
+/// (금액·주문번호를 JS 문자열에 직접 넣지 않는다). 클라이언트 키 종류에 따라 두 방식을 쓴다.
+///
+/// - API 개별 연동 키(`test_ck_…`): 결제창(`payment().requestPayment`)을 바로 연다.
+/// - 주문서형(결제위젯) 키(`test_gck_…`): [`CHECKOUT_ID`] 영역에 결제수단·약관 UI와 "결제하기"·"취소" 버튼을
+///   그리고, "결제하기"를 누르면 `widgets().requestPayment`로 결제를 요청한다.
+///
+/// 결제가 진행되면 성공·실패 주소로 페이지를 옮기므로, 이 스크립트가 값을 돌려주는 것은 결제를 시작하지 못했거나
+/// 취소했을 때(`USER_CANCEL`)뿐이다. `elementId`는 [`CHECKOUT_ID`]다([`script_with_element_id`]).
+const REQUEST_PAYMENT_JS: &str = r##"
 const order = await dioxus.recv();
 const paths = await dioxus.recv();
+const box = document.getElementById(elementId);
+const clear = () => { if (box) box.replaceChildren(); };
 // <script>가 아직 다 받아지지 않았을 수 있으므로 window.TossPayments를 기다린다(최대 15초).
 for (let waited = 0; !window.TossPayments; waited += 100) {
   if (waited >= 15000) return { code: "SDK_NOT_LOADED", message: "결제 모듈을 불러오지 못했습니다" };
   await new Promise((resolve) => setTimeout(resolve, 100));
 }
+const fail = new URL(paths.fail, location.origin);
+// 결제 중 취소(PAY_PROCESS_CANCELED)는 실패 주소에 주문번호가 붙지 않으므로 직접 붙인다.
+fail.searchParams.set("donation", order.order_id);
+const request = {
+  orderId: order.order_id,
+  orderName: order.order_name,
+  successUrl: new URL(paths.success, location.origin).href,
+  failUrl: fail.href,
+};
+const amount = { currency: "KRW", value: order.amount };
 try {
-  const payment = TossPayments(order.client_key).payment({ customerKey: order.customer_key });
-  const fail = new URL(paths.fail, location.origin);
-  // 결제 중 취소(PAY_PROCESS_CANCELED)는 실패 주소에 주문번호가 붙지 않으므로 직접 붙인다.
-  fail.searchParams.set("donation", order.order_id);
-  await payment.requestPayment({
-    method: "CARD",
-    amount: { currency: "KRW", value: order.amount },
-    orderId: order.order_id,
-    orderName: order.order_name,
-    successUrl: new URL(paths.success, location.origin).href,
-    failUrl: fail.href,
-  });
-  return null;
+  const toss = TossPayments(order.client_key);
+  if (!/^(test|live)_gck_/.test(order.client_key)) {
+    await toss.payment({ customerKey: order.customer_key }).requestPayment({ method: "CARD", amount, ...request });
+    return null;
+  }
+  if (!box) return { code: "NO_CHECKOUT", message: "결제 영역을 찾지 못했습니다" };
+  const part = (tag, id, text) => { const el = document.createElement(tag); el.id = id; if (text) el.textContent = text; return el; };
+  const pay = part("button", "donation-pay", `${order.amount.toLocaleString("ko-KR")}원 결제하기`);
+  const cancel = part("button", "donation-cancel", "취소");
+  cancel.className = "secondary";
+  const actions = document.createElement("div");
+  actions.className = "checkout-actions";
+  actions.append(pay, cancel);
+  pay.disabled = true;
+  box.replaceChildren(part("div", "donation-methods"), part("div", "donation-agreement"), actions);
+  const widgets = toss.widgets({ customerKey: order.customer_key });
+  await widgets.setAmount(amount);
+  await Promise.all([
+    widgets.renderPaymentMethods({ selector: "#donation-methods", variantKey: "DEFAULT" }),
+    widgets.renderAgreement({ selector: "#donation-agreement", variantKey: "AGREEMENT" }),
+  ]);
+  pay.disabled = false;
+  while (true) {
+    const choice = await new Promise((resolve) => { pay.onclick = () => resolve("pay"); cancel.onclick = () => resolve("cancel"); });
+    if (choice === "cancel") { clear(); return { code: "USER_CANCEL", message: "결제를 취소했습니다" }; }
+    try {
+      pay.disabled = true;
+      await widgets.requestPayment(request);
+      return null;
+    } catch (error) {
+      // 결제창을 닫았거나 약관에 동의하지 않았다: 결제 UI는 그대로 두고 다시 고를 수 있게 한다.
+      pay.disabled = false;
+      if (error?.code !== "USER_CANCEL" && error?.code !== "NEED_AGREEMENT_WITH_REQUIRED_TERMS") throw error;
+    }
+  }
 } catch (error) {
+  clear();
   return { code: String(error?.code ?? "UNKNOWN"), message: String(error?.message ?? error) };
 }
-"#;
+"##;
 
-/// 결제창 스크립트에 넘기는 성공·실패 경로.
+/// 결제 스크립트에 넘기는 성공·실패 경로.
 #[derive(Serialize)]
 struct RedirectPaths {
     success: &'static str,
     fail: &'static str,
 }
 
-/// 결제창 스크립트가 돌려준 오류(결제창을 열지 못함, 닫음).
+/// 결제 스크립트가 돌려준 오류(결제를 시작하지 못함, 취소함).
 #[derive(Deserialize)]
 struct PaymentWindowError {
     code: String,
@@ -133,7 +178,7 @@ fn DonationPanel(board: DonationBoard, target: BroadcastTarget) -> Element {
     }
 }
 
-/// 후원 금액·메시지를 고르고 결제창을 연다. 받는 사람은 이 방송의 채널 주인이고, 서버가 방송에서 다시 정한다.
+/// 후원 금액·메시지를 고르고 결제를 요청한다. 받는 사람은 이 방송의 채널 주인이고, 서버가 방송에서 다시 정한다.
 #[component]
 fn DonateForm(target: BroadcastTarget, recipient_name: String) -> Element {
     let mut amount = use_signal(|| DONATION_PRESETS_WON[1]);
@@ -166,7 +211,7 @@ fn DonateForm(target: BroadcastTarget, recipient_name: String) -> Element {
                         ));
                     } else {
                         error.set(Some(format!(
-                            "결제창을 열지 못했습니다: {}",
+                            "결제를 시작하지 못했습니다: {}",
                             failure.message
                         )));
                     }
@@ -221,9 +266,11 @@ fn DonateForm(target: BroadcastTarget, recipient_name: String) -> Element {
                 button {
                     disabled: busy() || !amount_ok || message_length > MAX_DONATION_MESSAGE_CHARS,
                     onclick: move |_| async move { donate().await },
-                    if busy() { "결제창 여는 중…" } else { "{won_text(amount())} 후원하기" }
+                    if busy() { "결제 진행 중…" } else { "{won_text(amount())} 후원하기" }
                 }
             }
+            // 주문서형(결제위젯) 키일 때 결제 스크립트가 결제수단·약관 UI와 결제 버튼을 그리는 자리.
+            div { id: CHECKOUT_ID, class: "donation-checkout" }
             if !amount_ok {
                 p { class: "form-error", role: "alert", "후원 금액은 {min}~{max}입니다." }
             }
@@ -240,9 +287,10 @@ fn DonateForm(target: BroadcastTarget, recipient_name: String) -> Element {
     }
 }
 
-/// 결제창을 연다. 결제창이 페이지를 옮기면 돌아오지 않는다. 열지 못했거나 닫았으면 그 오류를 돌려준다.
+/// 결제를 요청한다. 결제가 진행되어 페이지를 옮기면 돌아오지 않는다. 시작하지 못했거나 취소했으면 그 오류를
+/// 돌려준다.
 async fn open_payment_window(order: &DonationOrder) -> Option<PaymentWindowError> {
-    let eval = document::eval(REQUEST_PAYMENT_JS);
+    let eval = document::eval(&script_with_element_id(CHECKOUT_ID, REQUEST_PAYMENT_JS));
     let paths = RedirectPaths {
         success: DONATION_SUCCESS_PATH,
         fail: DONATION_FAIL_PATH,

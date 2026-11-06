@@ -791,3 +791,18 @@ body {
   font-size: 1.1rem;
   font-weight: 700;
 }
+
+.donation-checkout:not(:empty) {
+  margin-top: 12px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.checkout-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px;
+}
