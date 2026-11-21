@@ -232,7 +232,7 @@ PC만으로 미리 확인하려면 PC 브라우저에서 `http://localhost:8090/
 | 무엇 | 주소 |
 | --- | --- |
 | 서비스(웹) | https://smj0617.com |
-| 상태 확인 | https://smj0617.com/healthz → `{"status":"ok","database":"ok","mediamtx":"ok","version":"0.6.0"}` |
+| 상태 확인 | https://smj0617.com/healthz → `{"status":"ok","database":"ok","mediamtx":"ok","version":"0.6.1"}` |
 | 다운로드 페이지 | https://smj0617.com/download |
 | 설치 파일(GitHub Releases) | https://github.com/smj0617/StreamApp/releases/latest |
 
