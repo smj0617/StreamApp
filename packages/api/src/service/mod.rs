@@ -51,7 +51,16 @@ pub struct AppService {
     max_recording_bytes: u64,
     /// 결제 서비스(토스페이먼츠 테스트 모드). 테스트 키가 설정되지 않았으면 `None`이고 후원을 받지 않는다.
     payments: Option<Payments>,
+    /// 시청자가 라이브 영상을 받아 갈 HLS 주소의 앞부분(끝에 `/` 없음). 재생 주소는
+    /// `<hls_base_url>/<채널ID>/index.m3u8`이다. 기본은 [`crate::mediamtx::DEFAULT_HLS_BASE_URL`].
+    hls_base_url: Arc<str>,
+    /// OBS "서버" 칸에 넣을 RTMP 주소(끝에 `/` 있음). 기본은 [`DEFAULT_OBS_SERVER`].
+    obs_server: Arc<str>,
 }
+
+/// 기본 OBS "서버" 칸 값. 스트리머는 앱과 같은 PC의 MediaMTX(RTMP 1935)로 송출한다.
+/// 배포에서는 환경변수 `STREAMAPP_OBS_SERVER`(`rtmp://<도메인>/`)로 바꾼다([`crate::server::init_from_env`]).
+pub const DEFAULT_OBS_SERVER: &str = "rtmp://localhost/";
 
 impl AppService {
     /// 마이그레이션이 적용된 풀로 서비스를 만든다([`db::connect_file`], [`db::connect_memory`]).
@@ -68,6 +77,8 @@ impl AppService {
             recordings_dir: PathBuf::from(DEFAULT_RECORDINGS_DIR),
             max_recording_bytes: crate::rules::MAX_RECORDING_BYTES,
             payments: None,
+            hls_base_url: crate::mediamtx::DEFAULT_HLS_BASE_URL.into(),
+            obs_server: DEFAULT_OBS_SERVER.into(),
         }
     }
 
@@ -89,9 +100,35 @@ impl AppService {
         self
     }
 
+    /// 시청자가 라이브 영상을 받아 갈 HLS 주소의 앞부분을 바꾼다(기본
+    /// [`crate::mediamtx::DEFAULT_HLS_BASE_URL`]). 끝의 `/`는 지운다. 앱과 같은 출처에서 내주면
+    /// `https://<도메인>/hls`처럼 절대 주소로 준다: 데스크톱 클라이언트도 API 응답만으로 재생할 수 있다.
+    pub fn with_hls_base_url(mut self, base_url: &str) -> Self {
+        self.hls_base_url = base_url.trim_end_matches('/').into();
+        self
+    }
+
+    /// OBS "서버" 칸 값을 바꾼다(기본 [`DEFAULT_OBS_SERVER`]). 끝에 `/`가 없으면 붙인다.
+    pub fn with_obs_server(mut self, obs_server: &str) -> Self {
+        let trimmed = obs_server.trim_end_matches('/');
+        self.obs_server = format!("{trimmed}/").into();
+        self
+    }
+
+    /// 채널의 라이브 HLS 재생 주소: `<HLS 주소 앞부분>/<채널ID>/index.m3u8`.
+    pub fn playback_url(&self, channel_id: &str) -> String {
+        format!("{}/{channel_id}/index.m3u8", self.hls_base_url)
+    }
+
     /// 녹화방송 영상 파일을 두는 폴더. 영상 주소(`crate::RECORDING_MEDIA_PATH`)로 이 폴더를 내준다.
     pub fn recordings_dir(&self) -> &Path {
         &self.recordings_dir
+    }
+
+    /// DB에 간단한 쿼리(`SELECT 1`)를 보내 응답하는지 확인한다. 상태 확인 경로(`crate::health`)가 쓴다.
+    pub async fn ping_database(&self) -> Result<(), ServiceError> {
+        sqlx::query("SELECT 1").execute(&self.pool).await?;
+        Ok(())
     }
 
     /// 이 서비스 시계의 현재 시각(유닉스 밀리초). 라이브 시각과 같은 기준이다.

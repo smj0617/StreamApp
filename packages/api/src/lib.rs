@@ -11,6 +11,7 @@
 //! - `server` feature 전용
 //!   - [`service`]: Dioxus·HTTP·쿠키를 모르는 앱 서비스. 규칙과 DB를 다루며 주 테스트 경계다.
 //!   - [`server`]: 앱 시작(DB 연결·마이그레이션·기본 데이터)과 서버 함수 어댑터가 함께 쓰는 코드.
+//!   - [`health`]: 상태 확인 경로 `GET /healthz`(Dioxus 없는 axum 라우터). 배포 확인과 모니터링용. 보조 테스트 경계다.
 //!   - [`mediamtx`]: MediaMTX가 부르는 내부 HTTP 엔드포인트(Dioxus 없는 axum 라우터). 보조 테스트 경계다.
 //!   - [`recording_files`]: 녹화방송 영상 파일 올리기와 내주기(Dioxus 없는 axum 라우터). 보조 테스트 경계다.
 //!   - [`whip`]: 휴대폰 방송 송출 시작·종료를 MediaMTX로 넘기는 중계(Dioxus 없는 axum 라우터). 보조 테스트 경계다.
@@ -39,6 +40,8 @@ pub use recordings::*;
 pub use users::*;
 pub use watch::*;
 
+#[cfg(feature = "server")]
+pub mod health;
 #[cfg(feature = "server")]
 pub mod mediamtx;
 #[cfg(feature = "server")]

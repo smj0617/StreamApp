@@ -177,7 +177,7 @@ if ($Mtx.HasExited) {
     Get-Content -ErrorAction SilentlyContinue -Tail 20 $MtxLog
     exit 1
 }
-# 포트는 mediamtx.yml의 값이다. HLS 8888은 Rust 상수 api::mediamtx::HLS_BASE_URL(시청 페이지의 재생 주소)과,
+# 포트는 mediamtx.yml의 값이다. HLS 8888은 Rust 상수 api::mediamtx::DEFAULT_HLS_BASE_URL(시청 페이지의 재생 주소)과,
 # Control API 9997은 api::server::mediamtx_api::DEFAULT_ADDRESS와 같아야 한다.
 Write-Host "MediaMTX $MtxVersion 실행 중(RTMP 1935, HLS 8888, WebRTC 8889·ICE 8189, Control API 9997). 로그: $MtxLog" -ForegroundColor Green
 Write-Host "  로그 보기: Get-Content -Wait $MtxLog"

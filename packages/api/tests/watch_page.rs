@@ -89,3 +89,33 @@ async fn unknown_channel_has_no_watch_page() {
 
     assert_eq!(page, None);
 }
+
+#[tokio::test]
+async fn playback_url_uses_configured_hls_base_url() {
+    let (svc, _) = service_with_clock().await;
+    let svc = svc.with_hls_base_url("https://stream.example.xyz/hls/");
+    let channel_id = chulsoo_channel(&svc).await;
+    svc.publish_started(&channel_id).await.unwrap();
+
+    let page = svc.watch_page(&channel_id).await.unwrap().unwrap();
+    let lives = svc.live_channels().await.unwrap();
+
+    let expected = format!("https://stream.example.xyz/hls/{channel_id}/index.m3u8");
+    assert_eq!(page.playback_url, expected);
+    assert_eq!(lives[0].playback_url, expected);
+}
+
+#[tokio::test]
+async fn obs_server_uses_configured_rtmp_address() {
+    let (svc, _) = service_with_clock().await;
+    let svc = svc.with_obs_server("rtmp://stream.example.xyz");
+    let created = svc.sign_up("철수", common::PASSWORD).await.unwrap();
+
+    let settings = svc
+        .my_channel_settings(created.user.id)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(settings.obs_server, "rtmp://stream.example.xyz/");
+}

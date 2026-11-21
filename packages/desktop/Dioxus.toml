@@ -1,0 +1,36 @@
+# StreamApp 데스크톱 클라이언트 번들 설정(`dx bundle --package desktop --desktop --release`).
+# 앱 이름은 실행 파일 이름(Cargo.toml의 [[bin]] name = "StreamApp")에서 온다.
+[application]
+name = "StreamApp"
+# 번들 산출물 폴더(이 크레이트 기준). git에서 제외한다.
+out_dir = "dist"
+
+[bundle]
+identifier = "kr.streamapp.desktop"
+publisher = "StreamApp"
+category = "Video"
+# 아래 문구는 영문(ASCII)으로 둔다. dx가 만드는 NSIS 스크립트를 makensis가 시스템 코드 페이지로 읽어서
+# 한글이 들어가면 "Bad text encoding"으로 실패한다.
+short_description = "StreamApp desktop client for live and recorded broadcasts"
+long_description = "Browse and play live channels and recordings from a StreamApp server."
+copyright = "StreamApp"
+# .ico는 Windows 설치 파일·실행 파일, .icns는 macOS 앱, PNG는 그 밖의 용도.
+icon = [
+    "icons/32x32.png",
+    "icons/128x128.png",
+    "icons/128x128@2x.png",
+    "icons/icon.icns",
+    "icons/icon.ico",
+]
+
+[bundle.windows]
+# WebView2 런타임이 없는 PC에서는 설치 프로그램 안의 작은 부트스트래퍼(약 2MB)가 인터넷으로 받아 설치한다.
+# 기본값(오프라인 설치 파일 포함)은 설치 파일이 240MB가 넘는다. Windows 11과 최신 Windows 10에는 이미 들어 있다.
+webview_install_mode = { EmbedBootstrapper = { silent = true } }
+# 설치할 때 관리자 권한 없이 현재 사용자에게만 설치한다(NSIS).
+[bundle.windows.nsis]
+install_mode = "CurrentUser"
+
+[bundle.macos]
+# WKWebView·네이티브 HLS가 안정적인 버전부터.
+minimum_system_version = "11.0"

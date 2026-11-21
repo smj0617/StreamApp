@@ -1,13 +1,15 @@
 //! MediaMTX 연동 HTTP 엔드포인트. 요청을 [`AppService`] 호출로 바꾸기만 하는 얇은 어댑터다.
 //!
 //! Dioxus에 의존하지 않는 axum [`Router`]라서, 앱은 Dioxus 라우터에 `.merge(..)`하고
-//! 테스트는 요청을 직접 넣는다(경계 B). 로컬 전용이라는 전제로 인증은 없다(ADR 0001).
+//! 테스트는 요청을 직접 넣는다(경계 B). 같은 서버의 MediaMTX만 부른다는 전제로 인증은 없다(ADR 0001).
+//! 배포에서는 앱이 `127.0.0.1`에만 열리고, 바깥 요청을 받는 Caddy가 `/internal/*`을 403으로 막는다.
 //!
 //! 경로는 서버 함수(`/api/..`)와 겹치지 않게 `/internal/mediamtx/..` 아래에 둔다.
 //! 이 라우터에는 fallback을 두지 않는다(Dioxus 라우터의 SSR fallback과 합칠 수 없다).
 //!
-//! MediaMTX 설정(`tools/mediamtx/mediamtx.yml`, `scripts/dev.ps1`)과 맞춰야 하는 HLS 주소와 앱 경로는
-//! Rust 쪽에서는 아래 상수가 유일한 출처다. 설정 파일의 같은 값 옆에는 이 상수 이름을 적어 둔다.
+//! MediaMTX 설정(`tools/mediamtx/mediamtx.yml`, `deploy/mediamtx.yml`, `scripts/dev.ps1`)과 맞춰야 하는
+//! HLS·WebRTC 주소 기본값과 앱 경로는 Rust 쪽에서는 아래 상수가 유일한 출처다. 설정 파일의 같은 값 옆에는
+//! 이 상수 이름을 적어 둔다. 배포에서는 주소를 환경변수로 바꾸고, `/internal/..`은 Caddy가 외부에서 막는다.
 
 use axum::{
     extract::{Query, State},
@@ -27,13 +29,20 @@ pub const AVAILABLE_HOOK_PATH: &str = "/internal/mediamtx/hooks/available";
 /// 경로의 준비가 끝나면(송출 종료) `runOnUnavailable` 훅이 `?path=<채널ID>`를 붙여 POST하는 경로.
 /// `mediamtx.yml`의 `runOnUnavailable`과 `dev.ps1`의 훅 명령에 같은 경로가 있다.
 pub const UNAVAILABLE_HOOK_PATH: &str = "/internal/mediamtx/hooks/unavailable";
-/// 시청자 브라우저가 영상을 받아 갈 MediaMTX HLS 주소의 앞부분. 재생 주소는
-/// `<HLS_BASE_URL>/<채널ID>/index.m3u8`이다(경로 이름이 채널 ID). 시청자는 앱과 같은 PC의 MediaMTX에서
-/// 재생한다. 포트는 `mediamtx.yml`의 `hlsAddress`(`:8888`)와 같아야 한다.
-pub const HLS_BASE_URL: &str = "http://localhost:8888";
-/// 앱이 휴대폰 방송 WHIP 요청을 넘길 MediaMTX WebRTC 서버 주소([`crate::whip`]). 앱과 같은 PC의 MediaMTX다.
-/// 포트는 `mediamtx.yml`의 `webrtcAddress`(`:8889`)와 같아야 한다.
-pub const WEBRTC_BASE_URL: &str = "http://127.0.0.1:8889";
+/// 시청자가 영상을 받아 갈 MediaMTX HLS 주소의 앞부분 기본값. 재생 주소는
+/// `<HLS 주소 앞부분>/<채널ID>/index.m3u8`이다(경로 이름이 채널 ID). 로컬 개발에서는 시청자가 앱과 같은 PC의
+/// MediaMTX에서 바로 재생한다. 포트는 `mediamtx.yml`의 `hlsAddress`(`:8888`)와 같아야 한다.
+///
+/// 배포에서는 환경변수 [`HLS_BASE_URL_ENV`]로 앱과 같은 출처의 `https://<도메인>/hls`를 준다
+/// (Caddy가 `/hls/*`를 앞부분을 떼고 `127.0.0.1:8888`로 넘긴다, `deploy/Caddyfile`).
+pub const DEFAULT_HLS_BASE_URL: &str = "http://localhost:8888";
+/// HLS 주소 앞부분을 바꾸는 환경변수([`crate::server::init_from_env`]가 읽는다).
+pub const HLS_BASE_URL_ENV: &str = "STREAMAPP_HLS_BASE_URL";
+/// 앱이 휴대폰 방송 WHIP 요청을 넘길 MediaMTX WebRTC 서버 주소 기본값([`crate::whip`]). 앱과 같은 PC의
+/// MediaMTX다. 포트는 `mediamtx.yml`의 `webrtcAddress`(`:8889`)와 같아야 한다.
+pub const DEFAULT_WEBRTC_BASE_URL: &str = "http://127.0.0.1:8889";
+/// WebRTC 서버 주소를 바꾸는 환경변수([`crate::server::webrtc_base_url_from_env`]가 읽는다).
+pub const WEBRTC_BASE_URL_ENV: &str = "STREAMAPP_MEDIAMTX_WEBRTC";
 
 /// MediaMTX 연동 라우터.
 pub fn router(service: AppService) -> Router {
@@ -83,7 +92,7 @@ async fn auth(State(service): State<AppService>, Json(request): Json<AuthRequest
     }
 }
 
-/// 훅 요청의 쿼리. 훅은 `curl.exe`로 본문 없이 POST하므로 값은 쿼리로만 온다.
+/// 훅 요청의 쿼리. 훅은 `curl`(Windows는 `curl.exe`)로 본문 없이 POST하므로 값은 쿼리로만 온다.
 #[derive(Deserialize)]
 struct HookQuery {
     /// MediaMTX가 `$MTX_PATH`를 바꿔 넣은 경로 이름 = 채널 ID

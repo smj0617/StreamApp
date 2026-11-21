@@ -45,6 +45,9 @@ pub struct LiveChannel {
     pub title: String,
     /// 라이브가 열린 시각(유닉스 밀리초)
     pub started_at_ms: i64,
+    /// 영상을 재생할 HLS 주소([`WatchPage::playback_url`]와 같은 값). 웹 화면은 쓰지 않고,
+    /// 데스크톱 클라이언트처럼 목록만 받아 바로 재생하는 쪽이 쓴다.
+    pub playback_url: String,
 }
 
 /// 시청 페이지 정보: 채널 하나와, 그 채널에서 지금 열린 라이브(있으면).
@@ -53,7 +56,8 @@ pub struct WatchPage {
     pub channel_id: String,
     pub channel_name: String,
     /// 영상을 재생할 HLS 주소: `<HLS 기본 주소>/<채널ID>/index.m3u8`. HLS 기본 주소는 서버의
-    /// `api::mediamtx::HLS_BASE_URL`이다.
+    /// 환경변수 `STREAMAPP_HLS_BASE_URL`이고, 없으면 `api::mediamtx::DEFAULT_HLS_BASE_URL`
+    /// (`http://localhost:8888`)이다. 배포에서는 앱과 같은 출처의 절대 주소(`https://<도메인>/hls`)다.
     pub playback_url: String,
     /// 지금 열린 라이브. 라이브 중이 아니면(오프라인) `None`
     pub live: Option<OpenLive>,

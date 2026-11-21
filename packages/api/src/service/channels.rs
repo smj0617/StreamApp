@@ -4,9 +4,6 @@ use super::{AppService, ServiceError};
 use crate::dto::MyChannelSettings;
 use crate::rules::MAX_TITLE_CHARS;
 
-/// OBS "서버" 칸에 넣을 값. 스트리머는 앱과 같은 PC의 MediaMTX(RTMP 1935)로 송출한다.
-const OBS_SERVER: &str = "rtmp://localhost/";
-
 #[derive(sqlx::FromRow)]
 struct ChannelSettingsRow {
     id: String,
@@ -35,7 +32,7 @@ impl AppService {
         Ok(row.map(|row| MyChannelSettings {
             // MediaMTX는 경로를 채널 ID로, 쿼리의 `key`를 송출 키로 받는다.
             obs_stream_key: format!("{}?key={}", row.id, row.stream_key),
-            obs_server: OBS_SERVER.to_owned(),
+            obs_server: self.obs_server.to_string(),
             channel_id: row.id,
             stream_key: row.stream_key,
             next_live_title: row.next_live_title,

@@ -6,7 +6,7 @@
 
 ## 과제: 치지직 만들기
 
-과제의 각 단계는 앞 단계 기능을 유지한 채 이 저장소에서 이어서 확장한다(①→②→③→④). 실행 방법은 [로컬에서 실행하기](#로컬에서-실행하기-windows), 환경변수는 [환경변수](#환경변수)에 있다.
+과제의 각 단계는 앞 단계 기능을 유지한 채 이 저장소에서 이어서 확장한다(①→②→③→④→⑥). 배포한 서비스는 **https://smj0617.com**, 데스크톱 앱은 **https://smj0617.com/download**에 있다(아래 "⑥ 도메인·OCI 배포와 Windows/macOS 클라이언트"). 실행 방법은 [로컬에서 실행하기](#로컬에서-실행하기-windows), 환경변수는 [환경변수](#환경변수)에 있다.
 
 ### ① 인증·인가 없는 녹화방송
 
@@ -222,6 +222,116 @@ PC만으로 미리 확인하려면 PC 브라우저에서 `http://localhost:8090/
 8. **이전 단계 기능**: 녹화방송 등록·재생, 휴대폰 송출·시청, 회원가입·로그인·로그아웃, 댓글 쓰기·수정·삭제와 방송 주인 권한 검사(③의 절차)가 그대로 된다.
 
 자동 테스트: [tests/donations.rs](packages/api/tests/donations.rs)(21개)가 가짜 결제 서비스로 주문 규칙(금액 범위, 메시지 길이, 자기 방송, 없는 방송, 결제 설정 없음), 확정과 방송별 내역·합계, 같은 승인 두 번·동시 승인·웹훅 반복·웹훅 뒤 성공 주소에서 한 번만 적립, 금액 조작·결제 서비스와 금액 불일치·결제 거절·연결 실패·남의 주문, 취소·실패 기록, 만료 통지, 라이브 후원, 녹화방송 삭제 뒤 기록 유지를 확인한다. [tests/payments_http.rs](packages/api/tests/payments_http.rs)(7개)는 가짜 토스페이먼츠 서버로 승인 요청의 인증 헤더·멱등키·본문, `ALREADY_PROCESSED_PAYMENT` 뒤 조회, 거절·처리 중·서버 오류 구분, 웹훅 반복 통지가 한 번만 적립되는지를 확인한다. 실제 토스페이먼츠에는 접속하지 않는다.
+
+### ⑥ 도메인·OCI 배포와 Windows/macOS 클라이언트
+
+①~④의 기능(녹화방송, 휴대폰 송출·시청, 회원가입·로그인과 권한 검사, 댓글, 후원)을 그대로 두고, 백엔드를 OCI Always Free VM에 배포해 구매한 도메인의 HTTPS로 제공한다. 같은 Rust 코드베이스로 Windows·macOS 데스크톱 클라이언트를 만들어 다운로드 페이지에서 배포한다. 자세한 재현 절차는 [docs/deploy.md](docs/deploy.md)(서버)와 [docs/desktop-client.md](docs/desktop-client.md)(클라이언트)에 있다.
+
+**공개 주소**
+
+| 무엇 | 주소 |
+| --- | --- |
+| 서비스(웹) | https://smj0617.com |
+| 상태 확인 | https://smj0617.com/healthz → `{"status":"ok","database":"ok","mediamtx":"ok","version":"0.6.0"}` |
+| 다운로드 페이지 | https://smj0617.com/download |
+| 설치 파일(GitHub Releases) | https://github.com/smj0617/StreamApp/releases/latest |
+
+**도메인과 비용**
+
+- 도메인: `smj0617.com`. **Cloudflare Registrar에서 등록함**(2026-11-21 등록, 만료 2027-11-21, 자동 갱신 켬).
+- 최초 등록 비용: **US$11.17**(1년, 청구서 IN-90087080). 갱신 비용: **US$11.17/년**(Cloudflare 대시보드의 갱신 가격. Cloudflare는 등록 기관 원가로 팔아 등록가와 갱신가가 같다).
+- 서버(OCI Always Free)와 TLS 인증서(Let's Encrypt)는 무료다. 이 과제에 든 돈은 도메인 비용뿐이다.
+
+**DNS와 HTTPS 구성**
+
+- DNS: Cloudflare DNS에 `A smj0617.com → 129.225.178.57`(VM 공인 IP), TTL 자동, **프록시 끔(DNS 전용)**. Cloudflare 프록시를 켜면 HTTP(80·443)만 지나가고 휴대폰 송출(WebRTC ICE 8189 UDP·TCP)과 OBS(RTMP 1935)가 막히기 때문이다.
+- TLS: VM의 Caddy가 사이트 주소(`{$STREAMAPP_DOMAIN}` = `smj0617.com`)를 보고 **Let's Encrypt 인증서를 자동으로 받고 갱신**하며 http(80)를 https(443)로 넘긴다(308). 발급 조건은 A 레코드가 이 VM을 가리키고 80·443이 열려 있는 것.
+- 경로 나누기([deploy/Caddyfile](deploy/Caddyfile)): `/internal/*` → 403(MediaMTX 인증·훅 엔드포인트는 인증이 없어 바깥에서 막는다), `/hls/*` → MediaMTX HLS(127.0.0.1:8888, MediaMTX가 주는 첫 리디렉트 주소에 `/hls`를 다시 붙인다), 그 밖 → 앱(127.0.0.1:8080, 채팅 WebSocket·녹화방송 업로드 510MB 포함).
+
+**OCI VM**
+
+| 항목 | 값 |
+| --- | --- |
+| 리전 | Japan Central (Osaka) `ap-osaka-1`, AD-1(홈 리전. Always Free 컴퓨트는 홈 리전에서만 만들 수 있다) |
+| Shape | **VM.Standard.E2.1.Micro**(AMD EPYC, x86_64) — Always Free 대상 |
+| OCPU / 메모리 | 1 OCPU(1/8 OCPU 기준 버스트) / **1 GB**(+ 스왑 파일 2 GB) |
+| 디스크 | 부트 볼륨 약 47 GB(Always Free 블록 스토리지 200 GB 안) |
+| OS | Canonical Ubuntu 24.04 Minimal(x86_64) |
+| 공인 IP | 129.225.178.57(임시 공인 IP, 인스턴스를 지우지 않으면 유지) |
+| 보안 목록 Ingress | TCP 22(SSH)·80·443·1935(RTMP)·8189(ICE), UDP 8189(ICE). VM 안 iptables에도 같은 허용 규칙을 넣었다 |
+
+- **선택 근거**: Oracle 공식 문서 기준 우선 후보인 **ARM64 `VM.Standard.A1.Flex` 2 OCPU·12 GB를 먼저 시도했다.** 오사카 리전은 가용성 도메인이 하나(AD-1)뿐인데, 2026-11-21에 `2 OCPU/12 GB`와 `1 OCPU/6 GB` 모두 "AD-1 셰이프 용량이 부족합니다(Out of capacity)"로 만들어지지 않았다. 홈 리전은 바꿀 수 없고 과제 기한이 다음 날이라, Always Free에서 A1 다음으로 고를 수 있는 유일한 컴퓨트인 **E2.1.Micro**(Always Free로 2대까지)를 골랐다. 이 서비스는 영상을 다시 인코딩하지 않고(MediaMTX가 RTMP·WebRTC를 HLS로 다시 묶기만 함), 앱은 Rust 단일 실행 파일이라 1 GB에서도 돈다. 서버에서는 빌드하지 않고 GitHub Actions가 만든 linux-amd64 묶음만 올린다. 메모리 여유를 위해 스왑 2 GB를 켰다.
+- A1 재고가 생기면 옮기기 쉽게 해 두었다: 서버 빌드는 linux-arm64·amd64를 함께 만들고([release-server.yml](.github/workflows/release-server.yml)), [setup-server.sh](deploy/setup-server.sh)는 아키텍처를 보고 MediaMTX를 고른다. 새 VM에서 같은 절차를 밟고 A 레코드만 바꾸면 된다.
+
+**백엔드: 배포 설정과 상태 확인 경로**
+
+- **상태 확인** `GET /healthz`([health.rs](packages/api/src/health.rs)): DB에 `SELECT 1`이 되면 200, 안 되면 503. MediaMTX Control API 연결 상태(`ok`/`unreachable`/`error`)도 싣지만 그 때문에 503이 되지는 않는다. 자동 테스트 [tests/health_http.rs](packages/api/tests/health_http.rs).
+- **서비스 주소·비밀 값은 환경 설정**: 서버의 `/etc/streamapp/streamapp.env`(권한 640, 저장소에는 자리 표시만 든 [deploy/streamapp.env.example](deploy/streamapp.env.example))를 앱과 MediaMTX의 systemd 유닛이 읽는다. ⑥에서 더한 값:
+
+  | 환경변수 | 로컬 기본값 | 배포 값 |
+  | --- | --- | --- |
+  | `STREAMAPP_HLS_BASE_URL` | `http://localhost:8888` | `https://smj0617.com/hls`(라이브 재생 주소 `playback_url`의 앞부분. 웹·데스크톱이 이 값으로 재생) |
+  | `STREAMAPP_OBS_SERVER` | `rtmp://localhost/` | `rtmp://smj0617.com/`(내 채널 설정의 OBS 서버 칸) |
+  | `STREAMAPP_SECURE_COOKIE` | 꺼짐 | `true`(세션 쿠키에 `Secure`) |
+  | `STREAMAPP_MEDIAMTX_WEBRTC` | `http://127.0.0.1:8889` | 같음(휴대폰 방송 WHIP 중계) |
+  | `IP` / `PORT` | `127.0.0.1` / `8080` | 같음(앱은 서버 안에서만 듣고 Caddy만 바깥에 연다) |
+  | `MTX_HLSALLOWORIGINS` | 설정 파일 값 | `https://smj0617.com` |
+  | `MTX_WEBRTCADDITIONALHOSTS` | `[]` | `129.225.178.57`(휴대폰 ICE에 알릴 공인 IP) |
+
+  `STREAMAPP_DEFAULT_PASSWORD`(기본 사용자 비밀번호)는 서버에서 무작위 값으로 바꿨고, 토스 시크릿 키 같은 비밀 값과 함께 저장소에 넣지 않는다.
+- **배포 구성**: [deploy/](deploy/) — Caddyfile, 리눅스용 [mediamtx.yml](deploy/mediamtx.yml)(HLS·WebRTC HTTP·Control API는 127.0.0.1에서만 듣고 ICE 8189와 RTMP 1935만 바깥에), systemd 유닛([streamapp.service](deploy/systemd/streamapp.service), [mediamtx.service](deploy/systemd/mediamtx.service), 전용 사용자 `streamapp`, `Restart=always`), 서버 최초 준비 [setup-server.sh](deploy/setup-server.sh), 배포 [deploy.sh](deploy/deploy.sh)(릴리스 폴더에 풀고 링크를 바꾼 뒤 `/healthz`가 30초 안에 200이 아니면 이전 릴리스로 되돌린다).
+- **재현 절차**(자세히는 [docs/deploy.md](docs/deploy.md)):
+
+  ```bash
+  # 0) OCI 콘솔: 위 표대로 VM 만들기, 보안 목록 Ingress 추가 / Cloudflare: A 레코드(DNS 전용)
+  # 1) 서버 준비(한 번)
+  scp -r deploy ubuntu@129.225.178.57:~/streamapp-deploy
+  ssh ubuntu@129.225.178.57 'sudo bash ~/streamapp-deploy/setup-server.sh --domain smj0617.com --public-ip 129.225.178.57'
+  ssh ubuntu@129.225.178.57 'sudo nano /etc/streamapp/streamapp.env'   # 기본 비밀번호, (선택) 토스 테스트 키
+  # 2) 빌드 묶음 받기(태그 릴리스 또는 Actions 아티팩트) 후 배포
+  gh release download -p 'streamapp-server-*-linux-amd64.tar.gz'
+  bash deploy/deploy.sh --host ubuntu@129.225.178.57 --tarball streamapp-server-<버전>-linux-amd64.tar.gz
+  # 3) 확인
+  curl -sS https://smj0617.com/healthz
+  ```
+
+**데스크톱 클라이언트**
+
+- 코드 [packages/desktop](packages/desktop): Rust + **Dioxus 0.7.10 desktop**(웹·서버와 같은 워크스페이스). 홈에서 배포 백엔드의 **라이브 목록**(`GET /api/live-channels`)과 **녹화방송 목록**(`GET /api/recordings`)을 보고, 카드를 누르면 재생한다. 라이브는 `playback_url`의 HLS(macOS는 WKWebView 기본 재생, Windows는 앱에 넣은 hls.js 1.7.4 + 앱 안 중계), 녹화방송은 mp4(`/media/recordings/…`, 건너뛰기 가능)다. 기본 서버 주소는 빌드할 때 `STREAMAPP_SERVER_URL`(릴리스는 저장소 변수 `https://smj0617.com`)로 넣고, 앱의 "서버 설정"에서 바꿀 수 있다. 로그인·채팅·댓글·후원은 범위 밖이고 "웹에서 열기"로 웹 앱을 연다.
+- 빌드·패키징: [packages/desktop/Dioxus.toml](packages/desktop/Dioxus.toml)(식별자 `kr.streamapp.desktop`, 아이콘, WebView2 부트스트래퍼)과 [.github/workflows/release-desktop.yml](.github/workflows/release-desktop.yml). `v*` 태그를 푸시하면 [release.yml](.github/workflows/release.yml)이 서버 묶음과 함께 아래 파일을 만들어 GitHub Release 하나에 올린다. 로컬에서는 `dx bundle --package desktop --desktop --release --package-types nsis --package-types msi`(Windows).
+
+  | 파일 | OS·아키텍처 | 형식 |
+  | --- | --- | --- |
+  | `StreamApp-windows-x64-setup.exe` | Windows 10·11 x64 | NSIS 설치 프로그램(현재 사용자에게 설치, 관리자 권한 불필요) |
+  | `StreamApp-windows-x64.msi` | Windows 10·11 x64 | Windows Installer |
+  | `StreamApp-macos-arm64.dmg` | macOS 11 이상 Apple Silicon(arm64) | 디스크 이미지(.app, 임시 서명) |
+  | `StreamApp-macos-x64.dmg` | macOS 11 이상 Intel(x86_64) | 디스크 이미지(.app, 임시 서명, Apple Silicon 러너에서 교차 빌드) |
+
+- 다운로드 페이지 https://smj0617.com/download ([views/download.rs](packages/web/src/views/download.rs), 상단 바 "다운로드"): OS별 링크(`https://github.com/smj0617/StreamApp/releases/latest/download/<파일 이름>`), 지원 아키텍처, 설치·실행 방법을 보여 준다.
+
+**OS별 설치·실행 확인 절차**
+
+1. 다른 PC나 휴대폰 테더링 같은 **외부 네트워크**에서 https://smj0617.com 을 연다. 주소창에 자물쇠(유효한 인증서)가 보이고, http://smj0617.com 은 https로 넘어간다. https://smj0617.com/healthz 가 `"status":"ok"`다.
+2. https://smj0617.com/download 에서 OS에 맞는 파일을 내려받는다.
+3. **Windows**: `StreamApp-windows-x64-setup.exe` 실행 → SmartScreen("Windows의 PC 보호")이 뜨면 "추가 정보 → 실행" → 시작 메뉴의 StreamApp 실행.
+4. **macOS**: 칩에 맞는 `.dmg`를 열어 StreamApp을 응용 프로그램으로 끌어 놓기 → Finder에서 Control-클릭 → 열기(macOS 15 이상은 시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기). "손상되었기 때문에 열 수 없습니다"가 뜨면 `xattr -dr com.apple.quarantine /Applications/StreamApp.app`.
+5. 앱 오른쪽 위에 `https://smj0617.com`이 보이고, 홈에 라이브·녹화방송 목록이 뜬다. 녹화방송 카드를 눌러 영상이 재생되고 막대로 건너뛸 수 있는지, (방송 중인 채널이 있으면) 라이브 카드를 눌러 영상이 나오는지 본다. 라이브가 없으면 웹에서 로그인해 "휴대폰 방송"이나 OBS(내 채널 설정의 서버·스트림 키)로 송출을 켜고 확인한다.
+
+**테스트한 OS·아키텍처와 결과**
+
+2026-11-21, 배포 서버 `https://smj0617.com`(커밋 `78ea65d` 서버 빌드)에 붙여 확인했다. 데스크톱 패키지는 GitHub Actions 실행 [44890524324](https://github.com/smj0617/StreamApp/actions/runs/44890524324)(커밋 `68a24f4`, 기본 서버 `https://smj0617.com`)의 산출물이다.
+
+| 대상 | OS·아키텍처 | 패키지 | 결과 |
+| --- | --- | --- | --- |
+| 도메인·HTTPS | 이 PC(Windows 11, 국내 가정용 인터넷 → 오사카 VM) | — | 성공: Let's Encrypt 인증서(`CN=smj0617.com`, 발급 YE1, 만료 2027-02-19), http → https 308, `/healthz` 200(`database`·`mediamtx` ok), `/internal/mediamtx/auth` 403 |
+| 웹 기능 | 같음(Chrome 계열 브라우저) | — | 성공: 로그인(세션 쿠키 `Secure`·`HttpOnly`), 녹화방송 올리기 201·비로그인 401·영상 Range 206, OBS 방식 시험 송출(RTMP 1935) → 홈 라이브 카드 → `/live/<채널>`에서 HLS 1280×720 재생(재생 시간이 계속 늘어남) |
+| 데스크톱 | **Windows 11 Home 26200, x64** | `StreamApp-windows-x64-setup.exe`(5.8MB) | 성공: `/S`로 현재 사용자에게 설치(`%LOCALAPPDATA%\Programs\StreamApp`) → 실행 → 오른쪽 위 `https://smj0617.com`, 홈에 라이브 1건·녹화방송 1건 → 라이브 재생(hls.js + 앱 중계, 송출 화면의 시각이 흐름) → 녹화방송 mp4 로드(0:12)·8초 지점으로 건너뛰기 |
+| 데스크톱 | **macOS 26.7.2, arm64**(GitHub Actions `macos-latest` 러너) | `StreamApp-macos-arm64.dmg`(4.9MB) | 부분 확인: 워크플로가 dmg를 붙여 앱을 실행하고 20초 뒤 화면을 캡처(실행 결과의 `smoke-macos-arm64` 아티팩트) → 오른쪽 위 `https://smj0617.com`, 라이브 1건("철수님의 라이브")·녹화방송 1건 목록 표시. **실제 Mac이 없어** 카드를 눌러 재생하는 것과 Gatekeeper 첫 실행 경고는 확인하지 못했다 |
+| 데스크톱 | macOS x86_64(Intel) | `StreamApp-macos-x64.dmg`(5.3MB) | 빌드만 확인(교차 빌드 성공). 실행은 확인하지 못했다 |
+| 데스크톱 | Windows x64 | `StreamApp-windows-x64.msi`(4.3MB) | 빌드만 확인. 설치는 setup.exe로만 확인했다 |
+| 휴대폰 송출 | — | — | 확인하지 못함(공인 IP·ICE 8189 UDP·TCP는 열어 두었다. 절차는 [docs/deploy.md](docs/deploy.md#휴대폰-송출-확인)) |
+
+- 이번 단계에서 하지 않은 것: Apple 개발자 인증서 서명·공증과 Windows 코드 서명(처음 실행 때 OS 경고가 뜬다), 앱 자동 업데이트, Windows ARM64·Linux 데스크톱 패키지, 데스크톱 앱 안의 로그인·채팅·댓글·후원, TURN 서버(대칭형 NAT 망에서 휴대폰 송출).
 
 ## 현황 (2026-11-06)
 

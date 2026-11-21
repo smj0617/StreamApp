@@ -1,0 +1,37 @@
+# MediaMTX v1.21.3(라이브 영상 중계). /etc/systemd/system/mediamtx.service로 복사한다(setup-server.sh).
+#
+# - 실행 파일: /opt/mediamtx/mediamtx(setup-server.sh가 공식 릴리스에서 내려받고 체크섬을 확인한다)
+# - 설정: /etc/streamapp/mediamtx.yml(레포의 deploy/mediamtx.yml). 서버마다 다른 값(도메인, 공인 IP)은
+#   streamapp.env의 MTX_<대문자 키> 환경 변수로 덮어쓴다.
+# - 로그: journalctl -u mediamtx -f
+
+[Unit]
+Description=MediaMTX(StreamApp 라이브 영상)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=streamapp
+Group=streamapp
+WorkingDirectory=/var/lib/streamapp
+EnvironmentFile=/etc/streamapp/streamapp.env
+ExecStart=/opt/mediamtx/mediamtx /etc/streamapp/mediamtx.yml
+Restart=always
+RestartSec=3
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/streamapp
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

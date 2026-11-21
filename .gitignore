@@ -6,3 +6,6 @@
 
 # 개발 스크립트가 내려받는 도구 (MediaMTX 실행 파일 등). 설정 파일은 tools\ 에 두고 커밋한다(ADR 0002).
 /.tools/
+
+# 데스크톱 번들 산출물(dx bundle)
+/packages/desktop/dist/

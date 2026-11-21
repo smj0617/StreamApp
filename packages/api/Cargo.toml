@@ -113,3 +113,8 @@ required-features = ["server"]
 name = "payments_http"
 path = "tests/payments_http.rs"
 required-features = ["server"]
+
+[[test]]
+name = "health_http"
+path = "tests/health_http.rs"
+required-features = ["server"]
