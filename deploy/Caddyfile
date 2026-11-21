@@ -21,8 +21,12 @@
 	}
 
 	# 라이브 HLS. 재생 목록·조각은 MediaMTX가 만들고, 재생 목록 안의 주소는 상대 주소라 앞부분을 떼도 된다.
+	# MediaMTX는 처음 요청을 `Location: /<채널ID>/index.m3u8?cookieCheck=1`(앞부분 없는 절대 경로)로 넘기므로,
+	# 그 주소에 /hls를 다시 붙여야 앱이 아니라 여기로 돌아온다.
 	handle_path /hls/* {
-		reverse_proxy 127.0.0.1:8888
+		reverse_proxy 127.0.0.1:8888 {
+			header_down Location "^/(.*)$" "/hls/$1"
+		}
 	}
 
 	# 앱. reverse_proxy는 WebSocket(채팅) 업그레이드를 그대로 넘긴다.

@@ -89,7 +89,10 @@ fi
 release="$RELEASES/$(date -u +%Y%m%d%H%M%S)"
 mkdir -p "$release"
 # 묶음 맨 위 폴더(streamapp-server/)가 있으면 벗긴다.
-if tar -tzf /tmp/streamapp-server.tar.gz | head -1 | grep -q '/'; then
+# (`tar | head -1`은 pipefail에서 tar가 SIGPIPE로 실패해 조건이 거짓이 될 수 있어 목록을 먼저 받는다.)
+first_entry="$(tar -tzf /tmp/streamapp-server.tar.gz)"
+first_entry="${first_entry%%$'\n'*}"
+if [[ "$first_entry" == */* ]]; then
     tar -xzf /tmp/streamapp-server.tar.gz -C "$release" --strip-components=1
 else
     tar -xzf /tmp/streamapp-server.tar.gz -C "$release"
