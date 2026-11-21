@@ -16,13 +16,15 @@ struct LiveChannelRow {
     started_at_ms: i64,
 }
 
-impl From<LiveChannelRow> for LiveChannel {
-    fn from(row: LiveChannelRow) -> Self {
+impl LiveChannelRow {
+    /// 재생 주소(`playback_url`)는 서비스의 HLS 주소 설정으로 만든다.
+    fn into_live_channel(self, service: &AppService) -> LiveChannel {
         LiveChannel {
-            channel_id: row.channel_id,
-            channel_name: row.channel_name,
-            title: row.title,
-            started_at_ms: row.started_at_ms,
+            playback_url: service.playback_url(&self.channel_id),
+            channel_id: self.channel_id,
+            channel_name: self.channel_name,
+            title: self.title,
+            started_at_ms: self.started_at_ms,
         }
     }
 }
@@ -97,7 +99,10 @@ impl AppService {
         )
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.into_iter().map(LiveChannel::from).collect())
+        Ok(rows
+            .into_iter()
+            .map(|row| row.into_live_channel(self))
+            .collect())
     }
 
     /// 진행 중인 라이브 제목 바꾸기. 저장한 제목을 돌려주고, 그 라이브의 채팅 참여자에게

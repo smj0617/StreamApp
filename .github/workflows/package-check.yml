@@ -1,0 +1,15 @@
+# 배포 묶음 빌드 확인: 기능 브랜치(feat/**)에서 서버(Linux ARM64·x64)와 데스크톱(Windows·macOS) 패키지가
+# 만들어지는지 릴리스 없이 확인한다. 결과 파일은 실행 결과의 Artifacts로 받는다. Actions 탭에서 손으로도 돌릴 수 있다.
+name: Package check
+
+on:
+  push:
+    branches: ["feat/step6-*"]
+  workflow_dispatch:
+
+jobs:
+  server:
+    uses: ./.github/workflows/release-server.yml
+
+  desktop:
+    uses: ./.github/workflows/release-desktop.yml

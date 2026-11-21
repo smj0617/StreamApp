@@ -3,8 +3,8 @@ use dioxus::prelude::*;
 mod views;
 
 use views::{
-    Broadcast, DonationFail, DonationSuccess, Home, Login, NewRecording, NotFound, RecordingDetail,
-    Settings, Shell, SignUp, Watch,
+    Broadcast, DonationFail, DonationSuccess, Download, Home, Login, NewRecording, NotFound,
+    RecordingDetail, Settings, Shell, SignUp, Watch,
 };
 
 /// 모든 페이지는 `Shell` 레이아웃(상단 바) 안에 그린다.
@@ -23,6 +23,9 @@ enum Route {
         Settings {},
         #[route("/broadcast")]
         Broadcast {},
+        // 데스크톱 앱 다운로드(과제 ⑥)
+        #[route("/download")]
+        Download {},
         #[route("/live/:channel_id")]
         Watch { channel_id: String },
         // `/recordings/new`가 `/recordings/:id`보다 먼저 와야 한다.
@@ -57,7 +60,11 @@ fn main() {
             .merge(api::payment_webhook::router(service.clone()))
             .merge(api::whip::router(
                 service.clone(),
-                api::mediamtx::WEBRTC_BASE_URL,
+                &api::server::webrtc_base_url_from_env(),
+            ))
+            .merge(api::health::router(
+                service.clone(),
+                &api::server::mediamtx_api::address_from_env(),
             ))
             .layer(dioxus::server::axum::Extension(service)))
     });

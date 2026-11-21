@@ -1,0 +1,24 @@
+[package]
+name = "desktop"
+version.workspace = true
+edition.workspace = true
+description = "StreamApp 데스크톱 클라이언트(Windows·macOS): 배포한 백엔드의 라이브·녹화방송 목록을 보고 재생한다."
+
+# 실행 파일 이름. `dx bundle`은 이 이름을 앱 이름(StreamApp.app, StreamApp_<버전>_x64-setup.exe 등)으로 쓴다.
+[[bin]]
+name = "StreamApp"
+path = "src/main.rs"
+
+[dependencies]
+dioxus = { workspace = true, features = ["desktop", "router"] }
+serde = { workspace = true }
+# 백엔드 API(JSON)와 라이브 HLS 중계(`hls_proxy`)에 쓴다. 시스템 OpenSSL 없이 빌드되도록 rustls를 쓴다.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+url = "2"
+# 라이브 HLS 중계에서 응답을 웹뷰에 돌려줄 때 쓴다(dioxus-desktop의 asset handler가 http 타입을 쓴다).
+tokio = { version = "1", features = ["rt", "sync"] }
+
+[dev-dependencies]
+# 데스크톱이 읽는 응답 타입이 서버의 dto와 맞는지 확인한다(테스트에서만, server feature 없이).
+api = { workspace = true }
+serde_json = "1"

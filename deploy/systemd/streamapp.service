@@ -1,0 +1,41 @@
+# StreamApp 앱(Dioxus 풀스택 서버). /etc/systemd/system/streamapp.service로 복사한다(setup-server.sh).
+#
+# - 실행 파일과 화면 파일(public/)은 deploy.sh가 /opt/streamapp/releases/<시각>/에 풀고
+#   /opt/streamapp/current 링크를 바꾼다. 서버는 실행 파일 옆의 public/을 내준다.
+# - 앱은 127.0.0.1:8080에서만 듣는다(streamapp.env의 IP·PORT). 바깥 요청은 Caddy가 넘긴다.
+# - DB와 녹화방송 영상은 /var/lib/streamapp/data 아래에 둔다(streamapp.env의 STREAMAPP_DB, STREAMAPP_RECORDINGS_DIR).
+# - 로그: journalctl -u streamapp -f
+
+[Unit]
+Description=StreamApp 웹 서버
+Documentation=https://github.com/smj0617/StreamApp/blob/main/docs/deploy.md
+After=network-online.target mediamtx.service
+Wants=network-online.target mediamtx.service
+# 반복해서 바로 죽으면(설정 오류 등) 1분에 10번까지만 다시 띄운다.
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=streamapp
+Group=streamapp
+WorkingDirectory=/var/lib/streamapp
+EnvironmentFile=/etc/streamapp/streamapp.env
+ExecStart=/opt/streamapp/current/server
+Restart=always
+RestartSec=3
+
+# 보호: 쓸 수 있는 곳은 데이터 폴더뿐이다.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/streamapp
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

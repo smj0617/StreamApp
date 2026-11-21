@@ -1,0 +1,82 @@
+# 리눅스 서버용 빌드(Dioxus 풀스택: 서버 실행 파일 + 화면 파일 public/)를 만들고, `v*` 태그를 푸시하면
+# GitHub Release에 올린다. 서버에는 deploy/deploy.sh로 올린다(docs/deploy.md).
+#
+# - OCI Always Free A1(ARM64)용 linux-arm64는 GitHub의 ARM 러너(ubuntu-24.04-arm)에서 그대로 빌드한다(교차 빌드 없음).
+#   A1 재고가 없어 E2.1.Micro(x86_64)를 쓸 때를 위해 linux-amd64도 함께 만든다.
+# - 서버 OS(Ubuntu 24.04)와 같은 러너에서 빌드해 glibc 버전이 맞는다.
+# - 묶음: streamapp-server-<태그 또는 커밋>-linux-<arm64|amd64>.tar.gz
+#     streamapp-server/server    서버 실행 파일(dx가 붙이는 이름)(IP·PORT 환경변수로 듣는 주소를 정한다. 기본 127.0.0.1:8080)
+#     streamapp-server/public/   화면 파일(wasm, js, css). 서버가 실행 파일 옆의 public/을 내준다.
+# - Actions 탭에서 손으로 돌리면(workflow_dispatch) 릴리스 없이 실행 결과의 Artifacts로만 받는다.
+name: Release server
+
+# 태그 릴리스는 release.yml이 이 워크플로를 불러서(workflow_call) 하고, GitHub Release는 release.yml이 한 번만 만든다.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: release-server-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  DX_VERSION: 0.7.10
+
+jobs:
+  bundle:
+    name: 서버 번들 (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            os: ubuntu-24.04-arm
+          - arch: amd64
+            os: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml에 고정한 버전·타깃(wasm32-unknown-unknown 포함)·구성요소를 설치한다.
+      - name: Rust 설치
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: server-${{ matrix.arch }}
+
+      # dx(dioxus-cli)는 로컬 개발(scripts/dev.ps1)과 같은 0.7.10으로 고정한다. 미리 빌드된 파일을 받는다.
+      - uses: cargo-bins/cargo-binstall@main
+      - name: dx 설치
+        run: |
+          cargo binstall dioxus-cli@${DX_VERSION} --no-confirm --force
+          dx --version
+
+      # 풀스택 번들: 서버(web 패키지, server 기능)와 화면(wasm, web 기능)을 함께 만든다.
+      # --out-dir 아래에 서버 실행 파일(server, 패키지 이름이 아니다)과 public/ 폴더가 생긴다.
+      - name: 번들
+        run: dx bundle --web --release --package web --out-dir bundle-out
+
+      - name: 묶기
+        run: |
+          ls -la bundle-out
+          test -x bundle-out/server
+          test -d bundle-out/public
+          version="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then version="$(git rev-parse --short HEAD)"; fi
+          name="streamapp-server-${version}-linux-${{ matrix.arch }}"
+          mkdir -p staging/streamapp-server upload
+          cp bundle-out/server staging/streamapp-server/server
+          cp -R bundle-out/public staging/streamapp-server/public
+          file staging/streamapp-server/server
+          tar -C staging -czf "upload/${name}.tar.gz" streamapp-server
+          (cd upload && sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256")
+          ls -la upload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: streamapp-server-linux-${{ matrix.arch }}
+          path: upload/*
+          if-no-files-found: error
+

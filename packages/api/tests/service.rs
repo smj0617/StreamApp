@@ -460,6 +460,7 @@ fn live(channel_id: &str, channel_name: &str, title: &str, started_at_ms: i64) -
         channel_name: channel_name.to_string(),
         title: title.to_string(),
         started_at_ms,
+        playback_url: format!("http://localhost:8888/{channel_id}/index.m3u8"),
     }
 }
 

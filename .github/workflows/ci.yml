@@ -23,6 +23,13 @@ jobs:
       - name: Rust 설치
         run: rustup toolchain install
 
+      # 데스크톱 클라이언트(packages/desktop)가 리눅스에서 컴파일될 때 필요한 시스템 라이브러리
+      # (WebKitGTK 웹뷰, GTK, 메뉴·단축키용 libxdo). --workspace로 검사하므로 함께 설치한다.
+      - name: 데스크톱 빌드용 시스템 라이브러리 설치
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev
+
       - uses: Swatinem/rust-cache@v2
 
       - name: fmt

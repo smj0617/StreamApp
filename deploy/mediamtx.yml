@@ -1,0 +1,99 @@
+# StreamApp 배포(Ubuntu 24.04, OCI)용 MediaMTX v1.21.3 설정. 서버의 /etc/streamapp/mediamtx.yml로 복사한다.
+# 로컬 개발 설정(tools/mediamtx/mediamtx.yml)을 바탕으로, 바깥에 열 것과 서버 안에서만 쓸 것을 나눴다.
+#
+# - 적지 않은 키는 MediaMTX 기본값을 쓴다. 키 설명은 v1.21.3 기본 설정 파일을 본다:
+#   https://github.com/bluenviron/mediamtx/blob/v1.21.3/mediamtx.yml
+# - 서버마다 다른 값(도메인, 공인 IP)은 이 파일에 적지 않고 환경 변수 MTX_<대문자 키>로 덮어쓴다(리스트는 쉼표로 구분).
+#   mediamtx.service가 /etc/streamapp/streamapp.env를 읽는다:
+#     MTX_HLSALLOWORIGINS=https://<도메인>
+#     MTX_WEBRTCADDITIONALHOSTS=<공인 IP>
+# - 검사: /opt/mediamtx/mediamtx --validate-conf=/etc/streamapp/mediamtx.yml
+#
+# 포트(바깥에 여는 것은 RTMP 1935와 WebRTC ICE 8189뿐이다. 나머지는 127.0.0.1에만 연다):
+#   1935 TCP  RTMP(OBS 송출)            바깥에 연다(선택)
+#   8189 UDP·TCP WebRTC ICE(휴대폰 송출)  바깥에 연다
+#   8888 TCP  HLS                       127.0.0.1. 바깥에서는 Caddy의 https://<도메인>/hls/로 받는다
+#   8889 TCP  WebRTC HTTP(WHIP)         127.0.0.1. 앱이 휴대폰 방송 WHIP 요청을 넘긴다
+#   9997 TCP  Control API               127.0.0.1. 앱(시작할 때 송출 상태 맞추기, /healthz)만 부른다
+
+logLevel: info
+# systemd가 표준 출력을 journald로 모은다: journalctl -u mediamtx
+logDestinations: [stdout]
+
+###############################################
+# 인증: 송출 키 확인은 앱이 한다(ADR 0002). 앱은 127.0.0.1:8080에서만 듣는다(streamapp.env의 IP·PORT).
+# 경로는 Rust 상수 api::mediamtx::AUTH_PATH와 같아야 한다. 바깥에서 /internal/..은 Caddy가 403으로 막는다.
+authMethod: http
+authHTTPAddress: http://127.0.0.1:8080/internal/mediamtx/auth
+authHTTPExclude:
+  # 필수: 앱이 부르는 Control API 요청이 다시 앱의 인증으로 돌아오지 않게 한다.
+  - action: api
+  - action: metrics
+  - action: pprof
+  # 시청은 누구나 할 수 있으므로 앱에 묻지 않는다.
+  - action: read
+  - action: playback
+
+###############################################
+# Control API: 서버 안에서만. 앱의 STREAMAPP_MEDIAMTX_API(기본 http://127.0.0.1:9997)와 같아야 한다.
+api: true
+apiAddress: 127.0.0.1:9997
+
+###############################################
+# RTMP: OBS 송출. 주소는 rtmp://<도메인>/<채널ID>?key=<송출 키>(앱의 STREAMAPP_OBS_SERVER).
+# 1935를 바깥에 열지 않으면 OBS 송출만 안 되고 휴대폰 송출은 된다.
+rtmp: true
+rtmpAddress: :1935
+
+###############################################
+# HLS: 서버 안에서만 열고, Caddy가 https://<도메인>/hls/* 를 앞부분을 떼고 이리로 넘긴다.
+# 앱의 STREAMAPP_HLS_BASE_URL=https://<도메인>/hls와 짝이다(Rust 상수 api::mediamtx::DEFAULT_HLS_BASE_URL은 로컬 기본값).
+hls: true
+hlsAddress: 127.0.0.1:8888
+# 재생 페이지와 HLS가 같은 출처(https://<도메인>)라 CORS가 필요 없지만, 다른 출처에서 쓰지 못하게 도메인만 허용한다.
+# 실제 값은 MTX_HLSALLOWORIGINS=https://<도메인>으로 덮어쓴다. 아래는 자리 표시다.
+hlsAllowOrigins: ['https://stream.example.xyz']
+# Caddy(127.0.0.1)가 붙이는 X-Forwarded-For로 로그에 시청자 IP를 남긴다.
+hlsTrustedProxies: ['127.0.0.1']
+# 송출이 시작되면 바로 HLS를 만든다(첫 재생 요청의 지연과 404를 없앤다).
+hlsAlwaysRemux: true
+
+###############################################
+# WebRTC: 휴대폰 브라우저 송출(WHIP). 휴대폰은 https://<도메인>/api/broadcast/whip 으로 앱에 WHIP 요청을 보내고,
+# 앱이 채널 ID와 송출 키를 붙여 http://127.0.0.1:8889/<채널ID>/whip?key=<송출 키>로 넘긴다(ADR 0004).
+# HTTP 쪽은 서버 안에서만 열고(앱의 STREAMAPP_MEDIAMTX_WEBRTC, 기본 http://127.0.0.1:8889),
+# 영상·소리(ICE)는 휴대폰이 공인 IP의 8189로 직접 보낸다.
+webrtc: true
+webrtcAddress: 127.0.0.1:8889
+webrtcTrustedProxies: ['127.0.0.1']
+# ICE 포트. UDP가 막힌 망(일부 모바일·회사망)을 위해 TCP도 같은 번호로 연다.
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+# OCI VM은 사설 IP만 네트워크 카드에 있고 공인 IP는 1:1 NAT다. 휴대폰이 닿을 수 있게 공인 IP를 ICE 후보로 알린다.
+# 실제 값은 MTX_WEBRTCADDITIONALHOSTS=<공인 IP>로 덮어쓴다(setup-server.sh가 찾아 넣는다).
+webrtcAdditionalHosts: []
+
+###############################################
+# 쓰지 않는 서버는 끈다.
+rtsp: false
+srt: false
+moq: false
+
+###############################################
+# 경로 기본값: 송출 시작·종료를 앱에 알려 라이브를 열고 닫게 한다.
+# - MediaMTX는 훅 명령을 셸 없이 실행한다: 셸 규칙으로 낱말을 나누고(큰따옴표는 벗긴다) $MTX_PATH(경로 이름 = 채널 ID)를
+#   직접 바꿔 넣은 뒤 curl을 PATH에서 찾아 부른다(v1.21.3 internal/externalcmd/cmd_os_other.go). 주소는 한 낱말이 되게 큰따옴표로 감싼다.
+# - 앱 주소(127.0.0.1:8080)는 streamapp.env의 PORT와 같아야 한다.
+# - 경로는 Rust 상수 api::mediamtx::AVAILABLE_HOOK_PATH, api::mediamtx::UNAVAILABLE_HOOK_PATH와 같아야 한다.
+# - 훅 호출이 실패해도 MediaMTX는 다시 시도하지 않는다. 앱이 다시 시작되면 Control API로 송출 상태를 맞춘다.
+pathDefaults:
+  # 이미 송출 중인 채널에 두 번째 송출이 오면 기존 송출을 끊지 않고 새 송출을 거절한다.
+  overridePublisher: false
+  runOnAvailable: curl -s -m 10 -X POST "http://127.0.0.1:8080/internal/mediamtx/hooks/available?path=$MTX_PATH"
+  runOnAvailableRestart: false
+  runOnUnavailable: curl -s -m 10 -X POST "http://127.0.0.1:8080/internal/mediamtx/hooks/unavailable?path=$MTX_PATH"
+
+###############################################
+# 경로: all_others가 있어야 아무 경로(채널 ID)로나 송출할 수 있다. 누가 송출할 수 있는지는 인증이 정한다.
+paths:
+  all_others:

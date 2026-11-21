@@ -1,0 +1,226 @@
+/* StreamApp 데스크톱 클라이언트. 색은 웹 앱(packages/web/assets/main.css)과 맞춘다. */
+:root {
+  color-scheme: light dark;
+  --bg: #f7f7f8;
+  --fg: #16161a;
+  --muted: #6b6b76;
+  --bar-bg: #ffffff;
+  --card-bg: #ffffff;
+  --border: #e2e2e8;
+  --accent: #00b871;
+  --live: #e5484d;
+  --error: #d93036;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141517;
+    --fg: #ececf1;
+    --muted: #9a9aa5;
+    --bar-bg: #1c1d20;
+    --card-bg: #1c1d20;
+    --border: #2c2d31;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+a {
+  color: var(--accent);
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--bar-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar .brand {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.topnav {
+  display: flex;
+  gap: 12px;
+}
+
+.topnav a {
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.server-label {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+}
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+h1 {
+  font-size: 1.3rem;
+}
+
+.card-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  display: block;
+  padding: 12px 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.card:hover {
+  border-color: var(--accent);
+}
+
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+}
+
+.card-title {
+  font-size: 1.05rem;
+  margin: 0 0 4px;
+}
+
+.badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.75rem;
+  background: var(--border);
+}
+
+.badge.live {
+  background: var(--live);
+  color: #fff;
+}
+
+.muted {
+  color: var(--muted);
+  margin: 0;
+}
+
+.notice {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--error);
+}
+
+.error p {
+  margin: 4px 0;
+}
+
+button {
+  font: inherit;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--fg);
+  border-color: var(--border);
+}
+
+.back {
+  text-decoration: none;
+}
+
+.player {
+  width: 100%;
+  max-height: 70vh;
+  margin-top: 12px;
+  background: #000;
+  border-radius: 8px;
+}
+
+.watch-title {
+  margin: 12px 0 4px;
+}
+
+.web-link {
+  margin-top: 12px;
+}
+
+.server-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.server-form input {
+  flex: 1 1 320px;
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--fg);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin-top: 24px;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  word-break: break-all;
+}

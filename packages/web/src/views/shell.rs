@@ -32,6 +32,7 @@ pub fn Shell() -> Element {
                 Link { to: Route::Broadcast {}, "휴대폰 방송" }
                 Link { to: Route::NewRecording {}, "녹화방송 등록" }
                 Link { to: Route::Settings {}, "내 채널 설정" }
+                Link { to: Route::Download {}, "다운로드" }
             }
             AuthMenu {}
         }

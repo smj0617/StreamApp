@@ -2,7 +2,6 @@
 
 use super::{AppService, ServiceError};
 use crate::dto::{OpenLive, WatchPage};
-use crate::mediamtx::HLS_BASE_URL;
 
 #[derive(sqlx::FromRow)]
 struct WatchPageRow {
@@ -39,7 +38,7 @@ impl AppService {
                 _ => None,
             };
             WatchPage {
-                playback_url: format!("{HLS_BASE_URL}/{}/index.m3u8", row.channel_id),
+                playback_url: self.playback_url(&row.channel_id),
                 channel_id: row.channel_id,
                 channel_name: row.channel_name,
                 live,

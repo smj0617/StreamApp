@@ -1,0 +1,133 @@
+# 데스크톱 클라이언트(packages/desktop) 설치 파일을 만들고, `v*` 태그를 푸시하면 GitHub Release에 올린다.
+#
+# - 서버 주소: 리포지토리 변수 `STREAMAPP_SERVER_URL`(Settings → Secrets and variables → Actions → Variables)을
+#   빌드할 때 앱에 넣는다. 비어 있으면 앱의 기본 주소는 http://localhost:8090이고, 앱의 "서버 설정"에서 바꿀 수 있다.
+# - 파일 이름은 고정이다. 웹의 다운로드 페이지(packages/web/src/views/download.rs)가
+#   https://github.com/<저장소>/releases/latest/download/<파일 이름> 으로 링크한다. 바꾸면 두 곳을 함께 고친다.
+# - Actions 탭에서 손으로 돌리면(workflow_dispatch) 릴리스 없이 실행 결과의 Artifacts로만 받는다.
+name: Release desktop
+
+# 태그 릴리스는 release.yml이 이 워크플로를 불러서(workflow_call) 하고, GitHub Release는 release.yml이 한 번만 만든다.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: release-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  DX_VERSION: 0.7.10
+
+jobs:
+  bundle:
+    name: 번들 (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+          # Intel Mac용은 Apple Silicon 러너에서 교차 빌드한다(GitHub의 Intel macOS 러너는 줄어드는 중).
+          - name: macos-x64
+            os: macos-latest
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      STREAMAPP_SERVER_URL: ${{ vars.STREAMAPP_SERVER_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml에 고정한 버전을 설치하고, 이 러너의 빌드 대상을 더한다.
+      - name: Rust 설치
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-${{ matrix.target }}
+
+      # dx(dioxus-cli)는 로컬 개발(scripts/dev.ps1)과 같은 0.7.10으로 고정한다. 미리 빌드된 파일을 받는다.
+      - uses: cargo-bins/cargo-binstall@main
+      - name: dx 설치
+        run: |
+          cargo binstall dioxus-cli@${DX_VERSION} --no-confirm --force
+          dx --version
+
+      - name: 서버 주소 확인
+        run: |
+          if [ -z "${STREAMAPP_SERVER_URL}" ]; then
+            echo "::warning::리포지토리 변수 STREAMAPP_SERVER_URL이 비어 있습니다. 앱의 기본 서버 주소가 http://localhost:8090이 됩니다."
+          else
+            echo "앱 기본 서버 주소: ${STREAMAPP_SERVER_URL}"
+          fi
+
+      - name: 번들 (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          dx bundle --package desktop --desktop --release --target ${{ matrix.target }} \
+            --package-types nsis --package-types msi --out-dir bundle-out
+          mkdir -p upload
+          cp "$(find bundle-out -name '*-setup.exe' | head -n 1)" upload/StreamApp-${{ matrix.name }}-setup.exe
+          cp "$(find bundle-out -name '*.msi' | head -n 1)" upload/StreamApp-${{ matrix.name }}.msi
+          ls -la upload
+
+      # dx가 만든 .app에 임시(ad-hoc) 서명을 하고 .dmg를 직접 만든다. Apple 개발자 인증서·공증은 하지 않는다
+      # (다운로드 페이지에 우클릭 → 열기, `xattr -dr com.apple.quarantine` 안내).
+      - name: 번들 (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          dx bundle --package desktop --desktop --release --target ${{ matrix.target }} \
+            --package-types macos --out-dir bundle-out
+          app="$(find bundle-out -maxdepth 3 -name '*.app' -type d | head -n 1)"
+          test -n "$app"
+          codesign --force --deep --sign - "$app"
+          staging="$(mktemp -d)"
+          cp -R "$app" "$staging/StreamApp.app"
+          ln -s /Applications "$staging/Applications"
+          mkdir -p upload
+          hdiutil create -volname StreamApp -srcfolder "$staging" -ov -format UDZO \
+            upload/StreamApp-${{ matrix.name }}.dmg
+          lipo -archs "$staging/StreamApp.app/Contents/MacOS/"* || true
+          ls -la upload
+
+      # 실행 확인(Mac 실기가 없어 러너에서 대신 확인한다): 방금 만든 .dmg를 붙여 앱을 띄우고, 20초 뒤에도
+      # 살아 있는지 본 다음 화면을 캡처해 실행 결과의 Artifacts(smoke-…)로 남긴다. 릴리스 파일에는 넣지 않는다.
+      - name: 실행 확인 (macOS)
+        if: runner.os == 'macOS' && matrix.target == 'aarch64-apple-darwin'
+        run: |
+          mount="$(mktemp -d)"
+          hdiutil attach "upload/StreamApp-${{ matrix.name }}.dmg" -mountpoint "$mount" -nobrowse
+          cp -R "$mount/StreamApp.app" "$RUNNER_TEMP/StreamApp.app"
+          hdiutil detach "$mount"
+          open "$RUNNER_TEMP/StreamApp.app"
+          sleep 20
+          pgrep -fl StreamApp
+          mkdir -p smoke
+          screencapture -x smoke/macos-arm64-home.png
+          sw_vers > smoke/macos-arm64-system.txt
+          uname -m >> smoke/macos-arm64-system.txt
+          pkill -f StreamApp.app || true
+
+      - name: 실행 확인 결과 올리기
+        if: runner.os == 'macOS' && matrix.target == 'aarch64-apple-darwin'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-${{ matrix.name }}
+          path: smoke/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StreamApp-${{ matrix.name }}
+          path: upload/*
+          if-no-files-found: error
+

@@ -41,7 +41,7 @@ rtmpAddress: :1935
 ###############################################
 # HLS: 브라우저 재생. 주소는 http://localhost:8888/<채널ID>/index.m3u8
 hls: true
-# 포트는 Rust 상수 api::mediamtx::HLS_BASE_URL(시청 페이지가 쓰는 재생 주소의 앞부분)과 같아야 한다.
+# 포트는 Rust 상수 api::mediamtx::DEFAULT_HLS_BASE_URL(시청 페이지가 쓰는 재생 주소의 앞부분)과 같아야 한다.
 hlsAddress: :8888
 # 앱의 출처. localhost와 127.0.0.1은 서로 다른 출처라 둘 다 적는다.
 hlsAllowOrigins: ['http://localhost:8080', 'http://127.0.0.1:8080']
@@ -53,7 +53,7 @@ hlsAlwaysRemux: true
 # 앱이 현재 사용자의 채널 ID와 송출 키를 붙여 http://127.0.0.1:8889/<채널ID>/whip?key=<송출 키>로 넘긴다(ADR 0004).
 # 영상·소리는 휴대폰이 아래 ICE 포트(8189)로 PC에 직접 보낸다. 휴대폰과 PC가 같은 와이파이에 있어야 한다.
 webrtc: true
-# 포트는 Rust 상수 api::mediamtx::WEBRTC_BASE_URL과 같아야 한다.
+# 포트는 Rust 상수 api::mediamtx::DEFAULT_WEBRTC_BASE_URL과 같아야 한다.
 webrtcAddress: :8889
 # ICE(영상·소리) 포트. UDP가 막힌 망을 위해 TCP도 같은 번호로 연다. Windows 방화벽에서 mediamtx.exe를 허용해야 한다.
 webrtcLocalUDPAddress: :8189

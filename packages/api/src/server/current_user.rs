@@ -55,15 +55,36 @@ pub fn remember_session(token: &str) -> Result<(), ServerFnError> {
     // Path=/ 가 없으면 쿠키가 /api 아래 요청에만 실려 페이지(SSR) 요청에서 읽지 못한다.
     // HttpOnly: 페이지 스크립트가 토큰을 읽지 못한다. SameSite=Lax: 다른 사이트에서 보낸 POST에는 실리지 않는다.
     set_cookie(&format!(
-        "{COOKIE_NAME}={token}; Path=/; Max-Age={max_age}; SameSite=Lax; HttpOnly"
+        "{COOKIE_NAME}={token}; Path=/; Max-Age={max_age}; SameSite=Lax; HttpOnly{}",
+        secure_attribute()
     ))
 }
 
 /// 지금 처리 중인 서버 함수 응답으로 세션 토큰 쿠키를 지운다(로그아웃).
 pub fn forget_session() -> Result<(), ServerFnError> {
     set_cookie(&format!(
-        "{COOKIE_NAME}=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly"
+        "{COOKIE_NAME}=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly{}",
+        secure_attribute()
     ))
+}
+
+/// HTTPS로만 서비스하는 배포 서버에서 세션 쿠키에 `Secure`를 붙이게 하는 환경변수(`true`/`1`).
+/// 로컬 개발(`http://`)에서는 켜지 않는다.
+pub const SECURE_COOKIE_ENV: &str = "STREAMAPP_SECURE_COOKIE";
+
+/// `Secure`를 켜면 브라우저가 쿠키를 HTTPS 요청에만 싣는다.
+fn secure_attribute() -> &'static str {
+    static SECURE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let on = *SECURE.get_or_init(|| {
+        std::env::var(SECURE_COOKIE_ENV)
+            .map(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "True"))
+            .unwrap_or(false)
+    });
+    if on {
+        "; Secure"
+    } else {
+        ""
+    }
 }
 
 fn set_cookie(cookie: &str) -> Result<(), ServerFnError> {

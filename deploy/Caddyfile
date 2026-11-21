@@ -1,0 +1,46 @@
+# StreamApp 배포용 Caddy 설정(템플릿). 서버의 /etc/caddy/Caddyfile로 복사한다(setup-server.sh, deploy.sh --config).
+#
+# - 도메인은 환경변수 STREAMAPP_DOMAIN에서 읽는다. setup-server.sh가 /etc/streamapp/caddy.env에 적고,
+#   caddy.service에 덧붙인 설정(/etc/systemd/system/caddy.service.d/streamapp.conf)이 그 파일을 읽는다.
+#   caddy.env에는 도메인만 둔다(토스 시크릿 키가 든 streamapp.env를 Caddy에 넘기지 않는다).
+# - 사이트 주소가 도메인이라 Caddy가 Let's Encrypt 인증서를 자동으로 받고 갱신하며, http(80)는 https(443)로 넘긴다.
+#   인증서 발급에는 DNS A 레코드가 이 서버의 공인 IP를 가리키고 80·443 TCP가 열려 있어야 한다.
+# - 검사: sudo env STREAMAPP_DOMAIN=stream.example.xyz caddy validate --config /etc/caddy/Caddyfile
+#
+# 경로 나누기(handle 블록은 서로 배타적이고, 경로가 구체적인 것부터 맞춘다):
+#   /internal/*  → 403. MediaMTX 인증·훅 엔드포인트는 인증이 없으므로 바깥에서 부를 수 없게 막는다
+#                  (MediaMTX는 Caddy를 거치지 않고 127.0.0.1:8080으로 직접 부른다).
+#   /hls/*       → 앞부분(/hls)을 떼고 MediaMTX HLS(127.0.0.1:8888)로. 앱의 STREAMAPP_HLS_BASE_URL=https://<도메인>/hls와 짝이다.
+#   그 밖        → 앱(127.0.0.1:8080). 페이지·서버 함수·채팅 WebSocket·녹화방송 올리기·휴대폰 방송 WHIP 중계.
+
+{$STREAMAPP_DOMAIN} {
+	# 바깥에서 부르면 안 되는 내부 경로.
+	@internal path /internal /internal/*
+	handle @internal {
+		respond "Forbidden" 403
+	}
+
+	# 라이브 HLS. 재생 목록·조각은 MediaMTX가 만들고, 재생 목록 안의 주소는 상대 주소라 앞부분을 떼도 된다.
+	handle_path /hls/* {
+		reverse_proxy 127.0.0.1:8888
+	}
+
+	# 앱. reverse_proxy는 WebSocket(채팅) 업그레이드를 그대로 넘긴다.
+	handle {
+		# 녹화방송 영상 파일은 최대 500MB다(api::rules::MAX_RECORDING_MB). 멀티파트 머리말 여유를 더한다.
+		# 앱도 같은 한도(500MB + 1MB)를 따로 검사한다.
+		request_body {
+			max_size 510MB
+		}
+		# 시간 제한이 기본으로 없어 큰 영상을 올리는 동안에도 끊지 않는다.
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	# 압축. Caddy 기본 대상(text/*, JSON, JavaScript, wasm 등)만 압축하고 영상(video/*, HLS 조각)은 건드리지 않는다.
+	encode zstd gzip
+
+	log {
+		output stderr
+		format console
+	}
+}

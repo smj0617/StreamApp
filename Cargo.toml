@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 # web: 화면·라우팅·실행 파일 / api: 서버 함수·DB·앱 서비스
-members = ["packages/web", "packages/api"]
+members = ["packages/web", "packages/api", "packages/desktop"]
 
 [workspace.package]
 version = "0.1.0"

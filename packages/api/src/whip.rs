@@ -29,7 +29,7 @@ const MEDIAMTX_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// MediaMTX에 연결하지 못했을 때 보여 줄 사유.
 const MEDIAMTX_UNREACHABLE: &str =
-    "미디어 서버(MediaMTX)에 연결하지 못했습니다. PC에서 dev.ps1로 앱과 MediaMTX를 함께 띄웠는지 확인해 주세요";
+    "미디어 서버(MediaMTX)에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요(로컬 개발이면 dev.ps1로 앱과 MediaMTX를 함께 띄웠는지 확인해 주세요)";
 
 /// 이미 라이브 중인 채널로 송출을 시작하려 할 때 보여 줄 사유.
 const ALREADY_LIVE: &str =
@@ -46,7 +46,7 @@ struct WhipState {
 }
 
 /// 휴대폰 방송 WHIP 중계 라우터. `webrtc_base_url`은 MediaMTX WebRTC 서버 주소다
-/// (앱은 [`crate::mediamtx::WEBRTC_BASE_URL`], 테스트는 가짜 서버 주소).
+/// (앱은 [`crate::server::webrtc_base_url_from_env`], 테스트는 가짜 서버 주소).
 pub fn router(service: AppService, webrtc_base_url: &str) -> Router {
     let state = WhipState {
         service,

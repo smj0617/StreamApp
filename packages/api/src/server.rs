@@ -36,10 +36,31 @@ pub const DEFAULT_PASSWORD_ENV: &str = "STREAMAPP_DEFAULT_PASSWORD";
 /// 기본 비밀번호(시험 값). 실제로 쓰는 서버라면 [`DEFAULT_PASSWORD_ENV`]로 바꾸거나 기본 사용자를 지운다.
 pub const DEFAULT_PASSWORD: &str = "test1234";
 
+/// OBS "서버" 칸 값을 바꾸는 환경변수. 기본은 [`crate::service::DEFAULT_OBS_SERVER`](`rtmp://localhost/`).
+/// 배포에서는 `rtmp://<도메인>/`이다.
+pub const OBS_SERVER_ENV: &str = "STREAMAPP_OBS_SERVER";
+
+/// 환경변수 값(앞뒤 공백과 끝의 `/`를 지운 것). 없거나 비어 있으면 `None`.
+fn url_from_env(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+/// 휴대폰 방송 WHIP 요청을 넘길 MediaMTX WebRTC 서버 주소. 환경변수
+/// [`crate::mediamtx::WEBRTC_BASE_URL_ENV`]에서 읽고, 없거나 비어 있으면
+/// [`crate::mediamtx::DEFAULT_WEBRTC_BASE_URL`].
+pub fn webrtc_base_url_from_env() -> String {
+    url_from_env(crate::mediamtx::WEBRTC_BASE_URL_ENV)
+        .unwrap_or_else(|| crate::mediamtx::DEFAULT_WEBRTC_BASE_URL.to_owned())
+}
+
 /// 서버 함수가 앱 서비스를 꺼내는 추출자. `main`에서 `.layer(Extension(service))`로 붙인다.
 pub type Service = dioxus::server::axum::Extension<AppService>;
 
-/// 앱 시작 준비: DB 연결, 마이그레이션 적용, 녹화방송 폴더 준비, 결제 서비스(테스트 키가 있으면) 연결,
+/// 앱 시작 준비: DB 연결, 마이그레이션 적용, 녹화방송 폴더 준비, 공개 주소(HLS 재생 주소·OBS 서버) 설정,
+/// 결제 서비스(테스트 키가 있으면) 연결,
 /// (사용자가 없으면) 기본 데이터 생성,
 /// 비밀번호 없는 이전 단계 사용자에게 기본 비밀번호 넣기, MediaMTX의 실제 송출에 라이브 맞추기.
 pub async fn init_from_env() -> anyhow::Result<AppService> {
@@ -56,6 +77,13 @@ pub async fn init_from_env() -> anyhow::Result<AppService> {
     tracing::info!("녹화방송 폴더: {}", recordings_dir.display());
 
     let mut service = AppService::new(pool).with_recordings_dir(recordings_dir);
+    if let Some(hls_base_url) = url_from_env(crate::mediamtx::HLS_BASE_URL_ENV) {
+        service = service.with_hls_base_url(&hls_base_url);
+    }
+    tracing::info!("라이브 재생 주소: {}", service.playback_url("<채널ID>"));
+    if let Some(obs_server) = url_from_env(OBS_SERVER_ENV) {
+        service = service.with_obs_server(&obs_server);
+    }
     if let Some(payments) = toss_payments::payments_from_env() {
         service = service.with_payments(payments);
     }
