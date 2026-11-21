@@ -297,7 +297,7 @@ PC만으로 미리 확인하려면 PC 브라우저에서 `http://localhost:8090/
 
 **데스크톱 클라이언트**
 
-- 코드 [packages/desktop](packages/desktop): Rust + **Dioxus 0.7.10 desktop**(웹·서버와 같은 워크스페이스). 홈에서 배포 백엔드의 **라이브 목록**(`GET /api/live-channels`)과 **녹화방송 목록**(`GET /api/recordings`)을 보고, 카드를 누르면 재생한다. 라이브는 `playback_url`의 HLS(macOS는 WKWebView 기본 재생, Windows는 앱에 넣은 hls.js 1.7.4 + 앱 안 중계), 녹화방송은 mp4(`/media/recordings/…`, 건너뛰기 가능)다. 기본 서버 주소는 빌드할 때 `STREAMAPP_SERVER_URL`(릴리스는 저장소 변수 `https://smj0617.com`)로 넣고, 앱의 "서버 설정"에서 바꿀 수 있다. 로그인·채팅·댓글·후원은 범위 밖이고 "웹에서 열기"로 웹 앱을 연다.
+- 코드 [packages/desktop](packages/desktop): Rust + **Dioxus 0.7.10 desktop**(웹·서버와 같은 워크스페이스). 홈에서 배포 백엔드의 **라이브 목록**(`GET /api/live-channels`)과 **녹화방송 목록**(`GET /api/recordings`)을 보고, 카드를 누르면 재생한다. 라이브는 `playback_url`의 HLS(macOS는 WKWebView 기본 재생, Windows는 앱에 넣은 hls.js 1.7.4 + 앱 안 중계), 녹화방송은 mp4(`/media/recordings/…`, 건너뛰기 가능)다. 기본 서버 주소는 빌드할 때 `STREAMAPP_SERVER_URL`(릴리스는 저장소 변수 `https://smj0617.com`)로 넣고, 앱의 "서버 설정"에서 바꿀 수 있다. **로그인·로그아웃과 댓글**도 된다: 상단 "로그인"에서 닉네임·비밀번호로 로그인하면(`POST /api/auth/login`, 회원가입은 "웹에서 가입" 링크) 녹화방송·라이브 시청 화면 아래에서 댓글을 보고 쓰며 자기 댓글을 수정·삭제한다(`/api/comments`, 서버가 401·403·400으로 다시 확인하고 그 사유를 앱에 보인다). 세션 토큰만 앱 데이터 폴더의 `session.txt`에 서버 주소와 함께 저장해 다시 켜도 로그인이 유지되고(비밀번호는 저장하지 않음), 로그아웃하거나 서버 주소를 바꾸면 지운다(자세히는 [docs/desktop-client.md](docs/desktop-client.md)). 채팅·후원은 범위 밖이고 "웹에서 열기"로 웹 앱을 연다.
 - 빌드·패키징: [packages/desktop/Dioxus.toml](packages/desktop/Dioxus.toml)(식별자 `kr.streamapp.desktop`, 아이콘, WebView2 부트스트래퍼)과 [.github/workflows/release-desktop.yml](.github/workflows/release-desktop.yml). `v*` 태그를 푸시하면 [release.yml](.github/workflows/release.yml)이 서버 묶음과 함께 아래 파일을 만들어 GitHub Release 하나에 올린다. 로컬에서는 `dx bundle --package desktop --desktop --release --package-types nsis --package-types msi`(Windows).
 
   | 파일 | OS·아키텍처 | 형식 |
@@ -319,7 +319,7 @@ PC만으로 미리 확인하려면 PC 브라우저에서 `http://localhost:8090/
 
 **테스트한 OS·아키텍처와 결과**
 
-2026-11-21, 배포 서버 `https://smj0617.com`(커밋 `78ea65d` 서버 빌드)에 붙여 확인했다. 데스크톱 패키지는 GitHub Actions 실행 [44890524324](https://github.com/smj0617/StreamApp/actions/runs/44890524324)(커밋 `68a24f4`, 기본 서버 `https://smj0617.com`)의 산출물이다.
+2026-11-21, 배포 서버 `https://smj0617.com`(커밋 `78ea65d` 서버 빌드, 이후 Release `v0.6.0` 빌드로 다시 배포)에 붙여 확인했다. 데스크톱 패키지는 GitHub Actions 실행 [44890524324](https://github.com/smj0617/StreamApp/actions/runs/44890524324)(커밋 `68a24f4`, 기본 서버 `https://smj0617.com`)의 산출물이다.
 
 | 대상 | OS·아키텍처 | 패키지 | 결과 |
 | --- | --- | --- | --- |
@@ -329,9 +329,9 @@ PC만으로 미리 확인하려면 PC 브라우저에서 `http://localhost:8090/
 | 데스크톱 | **macOS 26.7.2, arm64**(GitHub Actions `macos-latest` 러너) | `StreamApp-macos-arm64.dmg`(4.9MB) | 부분 확인: 워크플로가 dmg를 붙여 앱을 실행하고 20초 뒤 화면을 캡처(실행 결과의 `smoke-macos-arm64` 아티팩트) → 오른쪽 위 `https://smj0617.com`, 라이브 1건("철수님의 라이브")·녹화방송 1건 목록 표시. **실제 Mac이 없어** 카드를 눌러 재생하는 것과 Gatekeeper 첫 실행 경고는 확인하지 못했다 |
 | 데스크톱 | macOS x86_64(Intel) | `StreamApp-macos-x64.dmg`(5.3MB) | 빌드만 확인(교차 빌드 성공). 실행은 확인하지 못했다 |
 | 데스크톱 | Windows x64 | `StreamApp-windows-x64.msi`(4.3MB) | 빌드만 확인. 설치는 setup.exe로만 확인했다 |
-| 휴대폰 송출 | — | — | 확인하지 못함(공인 IP·ICE 8189 UDP·TCP는 열어 두었다. 절차는 [docs/deploy.md](docs/deploy.md#휴대폰-송출-확인)) |
+| 휴대폰 송출 | Galaxy S24(5G), 휴대폰 브라우저 → https://smj0617.com/broadcast | — | 성공: 로그인 → 카메라 켜기·권한 허용 → 방송 시작("방송 중") → PC 브라우저 홈의 LIVE 카드에서 휴대폰 세로 영상 재생 → 휴대폰에서 방송 종료 → 시청 화면에 "라이브가 종료되었습니다"와 "종료" 표시. 영상은 휴대폰에서 VM의 ICE 8189로 바로 간다(`MTX_WEBRTCADDITIONALHOSTS`=공인 IP) |
 
-- 이번 단계에서 하지 않은 것: Apple 개발자 인증서 서명·공증과 Windows 코드 서명(처음 실행 때 OS 경고가 뜬다), 앱 자동 업데이트, Windows ARM64·Linux 데스크톱 패키지, 데스크톱 앱 안의 로그인·채팅·댓글·후원, TURN 서버(대칭형 NAT 망에서 휴대폰 송출).
+- 이번 단계에서 하지 않은 것: Apple 개발자 인증서 서명·공증과 Windows 코드 서명(처음 실행 때 OS 경고가 뜬다), 앱 자동 업데이트, Windows ARM64·Linux 데스크톱 패키지, 데스크톱 앱 안의 회원가입·채팅·후원, 세션 토큰의 OS 자격 증명 저장소 보관, TURN 서버(대칭형 NAT 망에서 휴대폰 송출).
 
 ## 현황 (2026-11-06)
 
