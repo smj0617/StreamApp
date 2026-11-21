@@ -127,10 +127,10 @@ Intel Mac용은 Apple Silicon 러너에서 `--target x86_64-apple-darwin`으로 
 | 날짜 | OS | 아키텍처 | 산출물 | 실행 | 목록 | 녹화방송 재생 | 라이브 재생 | 비고 |
 |---|---|---|---|---|---|---|---|---|
 | 2026-11-21 | Windows 11 Home 26200 | x64 | 로컬 `dx bundle` (setup.exe 5.8MB, msi 4.3MB) | 성공(번들 안 실행 파일) | 성공(로컬 서버 8090) | 성공(mp4) | 성공(hls.js + 중계, 테스트 송출) | 설치 프로그램은 실행하지 않음 |
-| | Windows 10 | x64 | 릴리스 setup.exe | | | | | |
-| | Windows | x64 | 릴리스 msi | | | | | |
-| | macOS | arm64 | 릴리스 dmg | | | | | |
-| | macOS | x86_64 | 릴리스 dmg | | | | | |
+| 2026-11-21 | Windows 11 Home 26200 | x64 | Actions 44890524324 setup.exe(기본 서버 https://smj0617.com) | 성공(`/S` 설치 후 실행) | 성공(배포 서버) | 성공(mp4 로드, 8초로 건너뛰기) | 성공(hls.js + 중계, RTMP 시험 송출) | |
+| | Windows | x64 | msi | | | | | 빌드만 확인 |
+| 2026-11-21 | macOS 26.7.2(Actions `macos-latest` 러너) | arm64 | Actions 44890524324 dmg | 성공(러너에서 실행, 화면 캡처) | 성공(배포 서버, 라이브 1·녹화 1) | 미확인 | 미확인 | 실제 Mac 없음 |
+| | macOS | x86_64 | dmg | | | | | 빌드만 확인(교차 빌드) |
 
 ### 자동 검사
 
