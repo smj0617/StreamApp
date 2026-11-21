@@ -1,6 +1,6 @@
 # 데스크톱 클라이언트 (과제 ⑥)
 
-Windows·macOS에서 배포한 StreamApp 백엔드의 라이브·녹화방송 목록을 보고 재생하는 앱이다.
+Windows·macOS에서 배포한 StreamApp 백엔드의 라이브·녹화방송 목록을 보고 재생하고, 로그인하면 시청 화면에서 댓글을 쓰는 앱이다.
 Rust + Dioxus 0.7.10 desktop(웹뷰: Windows WebView2, macOS WKWebView)으로 만들었고 코드는 [`packages/desktop`](../packages/desktop)에 있다.
 이 문서는 README에 옮길 초안을 겸한다.
 
@@ -12,13 +12,44 @@ Rust + Dioxus 0.7.10 desktop(웹뷰: Windows WebView2, macOS WKWebView)으로 �
 | 홈: 녹화방송 목록 | `GET /api/recordings` | 카드: 제목·채널 이름·등록 후 지난 시간 |
 | 라이브 시청 | `GET /api/watch/{channel_id}` → HLS | 제목·채널 이름, 오프라인 안내 |
 | 녹화방송 시청 | `GET /api/recordings/{id}` → mp4 (`/media/recordings/<파일>`) | 제목·채널 이름 |
+| 로그인 | `POST /api/auth/login` `{nickname, password}` | 상단 오른쪽 **로그인** 링크. 회원가입은 **웹에서 가입** 링크(웹 `/signup`) |
+| 로그인 상태·로그아웃 | `GET /api/current-user`, `POST /api/auth/logout` | 상단 오른쪽에 닉네임과 **로그아웃** |
+| 댓글(녹화방송·라이브 시청 아래) | `GET /api/recordings/{id}/comments`, `GET /api/lives/{live_id}/comments` | 목록은 누구나. 라이브 회차 ID는 `GET /api/watch/{channel_id}`의 `live.id`. 오프라인이면 라이브 댓글 칸을 숨긴다 |
+| 댓글 쓰기·수정·삭제 | `POST /api/comments` `{target: {"Recording": id} \| {"Live": id}, content}`, `POST /api/comments/edit` `{id, content}`, `POST /api/comments/delete` `{id}` | 로그인해야 쓴다(아니면 "로그인하면 댓글을 쓸 수 있습니다"와 로그인 링크). 내용 1~500자. 자기 댓글에만 수정·삭제. 성공하면 목록을 다시 불러온다 |
 | 서버 설정 | – | 서버 주소 바꾸기·저장·기본값으로 |
 
-로그인·채팅·댓글·후원은 범위 밖이다. 시청 화면의 **웹에서 열기**가 기본 브라우저로 웹 앱의 같은 화면을 연다.
+채팅·후원은 범위 밖이다. 시청 화면의 **웹에서 열기**가 기본 브라우저로 웹 앱의 같은 화면을 연다.
 
 서버 함수(`#[get]`)는 평범한 HTTP GET에 JSON으로 답한다. 데스크톱은 `reqwest`(rustls)로 부르고, 응답 타입은
 `api::dto`에서 읽는 필드만 옮겨 적었다(모르는 필드는 무시). 서버 dto와 맞는지는 `packages/desktop/src/client.rs`의
 테스트가 `api::dto` 값을 직렬화해 확인한다(`api`는 dev-dependency로만 쓴다).
+
+서버가 거절하면(401 로그인 필요, 403 작성자 아님, 400 내용 규칙, 404 없음) 응답 본문
+`{"message":…,"code":401,"data":{"ServerError":{"message":"로그인이 필요합니다","code":401}}}`에서
+`data.ServerError.message`를 꺼내 웹과 같은 문구를 보인다(`client.rs`의 `rejection_message`). 401이면 로그인이 끝났을 수
+있으니 다시 로그인하라고 덧붙인다. 버튼을 숨기는 것은 화면 편의이고 권한은 서버가 확인한다.
+
+### 로그인 세션
+
+- 서버는 로그인 응답에 `streamapp_session` 쿠키(HttpOnly, SameSite=Lax, 30일, 배포에서는 Secure)로 세션 토큰을 준다.
+  데스크톱은 reqwest의 쿠키 저장소를 쓰지 않고, 로그인 응답의 `Set-Cookie`에서 토큰만 꺼내 들고 있다가 로그인이 필요한
+  요청에 `Cookie: streamapp_session=<토큰>`으로 싣는다(`client.rs`). 그래서 토큰은 받은 서버에만 가고, 목록·영상·HLS 중계
+  요청에는 실리지 않는다.
+- 다음 실행에도 로그인을 유지하려고 토큰을 **서버 주소와 함께** 파일에 저장한다(`packages/desktop/src/session.rs`).
+  비밀번호는 저장하지 않는다.
+  - Windows `%APPDATA%\StreamApp\session.txt`, macOS `~/Library/Application Support/StreamApp/session.txt`
+    (서버 주소 파일과 같은 폴더). 내용은 첫 줄 서버 주소, 둘째 줄 토큰. macOS(Unix)에서는 소유자만 읽고 쓰게(0600) 만든다.
+  - 시작할 때 저장한 서버 주소가 지금 서버와 같을 때만 쓰고 `GET /api/current-user`로 확인한다. 세션이 끝났으면
+    (`null`) 파일을 지운다. 연결에 실패하면 세션은 두고 "로그인" 링크를 보인다.
+  - **서버 설정**에서 주소를 바꾸면(기본값으로 포함) 이전 서버의 세션을 버리고 파일을 지운다(새 서버에 이전 토큰을 보내지 않는다).
+    같은 서버라도 주소 문자열이 다르면(`localhost`와 `127.0.0.1`) 다른 서버로 본다. 이때 이전 서버의 세션은 서버에 기한까지 남지만
+    토큰을 가진 곳이 없다.
+  - **로그아웃**하면 서버 세션을 지우고(`POST /api/auth/logout`) 파일도 지운다. 서버에 연결하지 못해도 파일은 지운다.
+- **위험**: 이 파일을 읽을 수 있는 사람이나 프로그램(같은 OS 계정으로 도는 프로그램 포함)은 세션 기한인 30일 동안 그 계정으로
+  댓글 쓰기·수정·삭제 등 로그인한 사용자가 하는 일을 할 수 있다. 파일은 OS 사용자 폴더 안에 있어 다른 OS 계정은 기본적으로
+  읽지 못한다. 공용 PC에서는 다 쓴 뒤 **로그아웃**한다(서버 세션이 지워져 파일이 남아 있어도 쓸 수 없다).
+  OS 자격 증명 저장소(Windows 자격 증명 관리자, macOS 키체인)에 넣는 방법도 있으나, 서버 주소 파일과 같은 방식으로 단순하게 두었다.
+- 로컬 개발 서버(`http://`)에서는 토큰이 암호화되지 않은 HTTP로 간다. 배포 서버(`https://`)에서만 쓰는 것을 전제로 한다.
 
 ### 서버 주소
 
@@ -109,7 +140,8 @@ Intel Mac용은 Apple Silicon 러너에서 `--target x86_64-apple-darwin`으로 
    (.msi도 같다.)
 2. 시작 메뉴의 **StreamApp**을 실행한다.
 3. 확인: 상단 오른쪽에 서버 주소가 보이고, 홈에 라이브·녹화방송 목록이 뜬다. 녹화방송 카드를 눌러 재생되는지,
-   라이브 카드를 눌러 영상이 나오는지 본다.
+   라이브 카드를 눌러 영상이 나오는지 본다. 상단 오른쪽 **로그인**으로 로그인한 뒤 녹화방송 시청 화면 아래에서 댓글을
+   쓰고, 고치고, 지울 수 있는지 본다.
 
 ### macOS
 
@@ -135,7 +167,7 @@ Intel Mac용은 Apple Silicon 러너에서 `--target x86_64-apple-darwin`으로 
 ### 자동 검사
 
 ```powershell
-cargo test -p desktop                                   # 주소 처리·HLS 중계 주소·서버 dto 호환
+cargo test -p desktop                                   # 주소 처리·HLS 중계 주소·서버 dto 호환·오류 문구·세션 파일
 cargo clippy -p desktop --all-targets -- -D warnings
 ```
 

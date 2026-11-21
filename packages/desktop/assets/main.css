@@ -224,3 +224,133 @@ button.secondary {
   margin: 0;
   word-break: break-all;
 }
+
+/* 로그인 상태(상단 바) */
+.account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.account-name {
+  font-weight: 600;
+}
+
+button.small {
+  padding: 3px 10px;
+  font-size: 0.85rem;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 로그인 화면 */
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 360px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-label {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.auth-form input,
+.comments textarea {
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--fg);
+}
+
+.auth-form button {
+  align-self: flex-start;
+}
+
+/* 댓글 */
+.comments {
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.comments-heading {
+  font-size: 1.1rem;
+}
+
+.comments textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.comment-writer-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.count {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.count.over {
+  color: var(--error);
+}
+
+.comment-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+
+.comment {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.comment-author {
+  font-weight: 600;
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+.comment-content {
+  margin: 4px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.comment-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.link-button.danger {
+  color: var(--error);
+}

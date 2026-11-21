@@ -1,9 +1,12 @@
-//! 화면: 홈(라이브·녹화방송 목록), 라이브 시청, 녹화방송 시청, 서버 설정.
-//! 로그인·채팅·댓글·후원은 데스크톱 범위 밖이고, 각 시청 화면의 "웹에서 열기"로 웹 앱을 연다.
+//! 화면: 홈(라이브·녹화방송 목록), 라이브 시청, 녹화방송 시청, 서버 설정. 로그인은 [`crate::auth`],
+//! 시청 화면 아래 댓글은 [`crate::comments`]에 있다.
+//! 채팅·후원은 데스크톱 범위 밖이고, 각 시청 화면의 "웹에서 열기"로 웹 앱을 연다.
 
 use dioxus::prelude::*;
 
-use crate::client::{self, LiveChannel, RecordingSummary};
+use crate::auth::AccountMenu;
+use crate::client::{self, LiveChannel, RecordingSummary, Target};
+use crate::comments::Comments;
 use crate::player::{LivePlayer, RecordingPlayer};
 use crate::server_url::{self, ServerUrl};
 use crate::Route;
@@ -12,7 +15,7 @@ use crate::Route;
 #[derive(Clone, Copy)]
 pub struct Server(pub Signal<ServerUrl>);
 
-fn use_server() -> Signal<ServerUrl> {
+pub(crate) fn use_server() -> Signal<ServerUrl> {
     use_context::<Server>().0
 }
 
@@ -28,6 +31,7 @@ pub fn Shell() -> Element {
                 Link { to: Route::Settings {}, "서버 설정" }
             }
             span { class: "server-label", title: "연결한 서버", "{server.read().as_str()}" }
+            AccountMenu {}
         }
         main { class: "page", Outlet::<Route> {} }
     }
@@ -169,10 +173,13 @@ pub fn Live(channel_id: ReadSignal<String>) -> Element {
                     h1 { class: "watch-title", "{live.title}" }
                     p { class: "muted", "{watch.channel_name}" }
                     WebLink { url: web_url }
+                    Comments { target: Target::Live(live.id) }
                 },
                 None => rsx! {
                     h1 { class: "watch-title", "{watch.channel_name}" }
-                    p { class: "notice", "지금은 오프라인입니다. 라이브가 시작되면 새로고침하세요." }
+                    p { class: "notice",
+                        "지금은 오프라인입니다. 라이브가 시작되면 새로고침하세요. 라이브 댓글은 라이브 중에 보입니다."
+                    }
                     WebLink { url: web_url }
                 },
             }
@@ -214,6 +221,7 @@ pub fn Recording(id: ReadSignal<i64>) -> Element {
                 h1 { class: "watch-title", "{recording.title}" }
                 p { class: "muted", "{recording.channel_name} · {ago}" }
                 WebLink { url: web_url }
+                Comments { target: Target::Recording(recording.id) }
             }
         }
     };
@@ -234,7 +242,7 @@ fn WebLink(url: String) -> Element {
     rsx! {
         p { class: "web-link",
             a { href: "{url}", "웹에서 열기" }
-            span { class: "muted", " (채팅·댓글·후원은 웹에서)" }
+            span { class: "muted", " (채팅·후원은 웹에서)" }
         }
     }
 }
@@ -322,7 +330,7 @@ fn elapsed_text(elapsed_ms: i64) -> String {
 }
 
 /// 등록 후 지난 시간(웹과 같은 문구): "방금 전", "12분 전", "3시간 전", "5일 전".
-fn ago_text(elapsed_ms: i64) -> String {
+pub(crate) fn ago_text(elapsed_ms: i64) -> String {
     let minutes = elapsed_ms.max(0) / 60_000;
     match (minutes / (60 * 24), minutes / 60, minutes) {
         (0, 0, 0) => "방금 전".to_string(),
