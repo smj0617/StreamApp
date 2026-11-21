@@ -1,0 +1,49 @@
+# 공용 저장소 2: Redis. 채팅 이벤트를 앱 인스턴스 사이에 전달하는 pub/sub로만 쓴다(앱의 STREAMAPP_REDIS_URL).
+# 채팅은 저장하지 않으므로 Redis에도 데이터를 남기지 않는다(스냅숏·AOF 끔). 꺼졌다 켜지면 그 사이의 채팅만 다른
+# 인스턴스로 전달되지 않고, 앱은 다시 연결한다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:8.8.4-alpine
+          args: ["--save", "", "--appendonly", "no"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis

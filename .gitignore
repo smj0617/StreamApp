@@ -9,3 +9,7 @@
 
 # 데스크톱 번들 산출물(dx bundle)
 /packages/desktop/dist/
+
+# 로컬 오토스케일(과제 ⑤): 쿠버네티스 Secret 값(예시는 k8s/app/secret.env.example), 부하·관찰 결과 임시 파일
+/k8s/app/secret.env
+/loadtest/out/

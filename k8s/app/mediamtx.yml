@@ -1,0 +1,72 @@
+# 로컬 오토스케일(과제 ⑤) 클러스터용 MediaMTX v1.21.3 설정. 배포 설정(deploy/mediamtx.yml)과 같은 구조이고,
+# 앱 주소만 "같은 서버의 127.0.0.1:8080" 대신 클러스터의 앱 Service(http://streamapp:8080)다. 그래서 인증 요청과
+# 송출 시작·종료 훅이 앱 인스턴스(파드) 중 아무 곳으로나 가고, 어느 파드가 받아도 공용 DB에 반영된다.
+#
+# - 이미지: bluenviron/mediamtx:1.21.3-ffmpeg(alpine). 기본 이미지(scratch)에는 훅이 부를 프로그램이 없고, 이
+#   이미지에도 curl은 없어 busybox wget으로 POST한다.
+# - 키 설명: https://github.com/bluenviron/mediamtx/blob/v1.21.3/mediamtx.yml
+#
+# 포트(k8s/app/mediamtx.yaml의 Service, k8s/kind-cluster.yaml의 호스트 포트와 맞춘다):
+#   1935 TCP  RTMP(OBS·ffmpeg 송출)   호스트 1935
+#   8888 TCP  HLS(라이브 시청)         호스트 8888
+#   8189 UDP·TCP WebRTC ICE           호스트 8189
+#   8889 TCP  WebRTC HTTP(WHIP)       클러스터 안에서만(앱의 STREAMAPP_MEDIAMTX_WEBRTC)
+#   9997 TCP  Control API             클러스터 안에서만(앱의 STREAMAPP_MEDIAMTX_API)
+
+logLevel: info
+logDestinations: [stdout]
+
+###############################################
+# 인증: 송출 키 확인은 앱이 한다(ADR 0002). 경로는 Rust 상수 api::mediamtx::AUTH_PATH와 같아야 한다.
+authMethod: http
+authHTTPAddress: http://streamapp:8080/internal/mediamtx/auth
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
+  - action: read
+  - action: playback
+
+###############################################
+# Control API: 클러스터 안에서만(ClusterIP Service `mediamtx`).
+api: true
+apiAddress: :9997
+
+###############################################
+rtmp: true
+rtmpAddress: :1935
+
+###############################################
+# HLS: 시청 페이지(http://localhost:18080)와 출처가 달라 CORS로 허용한다.
+hls: true
+hlsAddress: :8888
+hlsAllowOrigins: ['http://localhost:18080', 'http://127.0.0.1:18080']
+hlsAlwaysRemux: true
+
+###############################################
+# WebRTC: 휴대폰 방송(WHIP). 앱이 http://mediamtx:8889/<채널ID>/whip?key=<송출 키>로 넘긴다.
+# 브라우저가 닿을 수 있는 ICE 후보 주소는 MTX_WEBRTCADDITIONALHOSTS로 덮어쓴다(이 PC의 주소). 로컬 클러스터에서는
+# 확인하지 않았다(README ⑤ 절 "하지 않은 것").
+webrtc: true
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+webrtcAdditionalHosts: []
+
+###############################################
+rtsp: false
+srt: false
+moq: false
+
+###############################################
+# 송출 시작·종료를 앱에 알린다. 경로는 Rust 상수 api::mediamtx::AVAILABLE_HOOK_PATH, UNAVAILABLE_HOOK_PATH와 같다.
+# MediaMTX는 훅 명령을 셸 없이 실행하고 $MTX_PATH(채널 ID)를 바꿔 넣는다. busybox wget으로 빈 본문 대신
+# 'hook'을 POST한다(앱은 본문을 읽지 않는다).
+pathDefaults:
+  overridePublisher: false
+  runOnAvailable: wget -q -T 10 -O /dev/null --post-data=hook "http://streamapp:8080/internal/mediamtx/hooks/available?path=$MTX_PATH"
+  runOnAvailableRestart: false
+  runOnUnavailable: wget -q -T 10 -O /dev/null --post-data=hook "http://streamapp:8080/internal/mediamtx/hooks/unavailable?path=$MTX_PATH"
+
+paths:
+  all_others:

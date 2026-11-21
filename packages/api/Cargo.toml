@@ -21,7 +21,8 @@ form_urlencoded = { version = "1", optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 # 채팅: 채널별 broadcast(`service::chat`)와 채팅 WebSocket 어댑터의 `select!`. dioxus 서버가 쓰는 tokio와 합쳐진다.
 # 비밀번호 해시는 `spawn_blocking`(rt)으로 비동기 작업 스레드 밖에서 계산한다.
-tokio = { version = "1", features = ["sync", "macros", "fs", "io-util", "rt"], optional = true }
+# Redis 채팅 중계의 재연결 대기(`time`)도 쓴다.
+tokio = { version = "1", features = ["sync", "macros", "fs", "io-util", "rt", "time"], optional = true }
 # 녹화방송 영상 파일: 받은 조각을 파일로 쓰고(`service::recordings`), 폴더의 파일을 Range 요청까지 받아 내준다
 # (`recording_files`). 모두 dioxus 서버가 이미 쓰는 크레이트와 합쳐진다.
 tower-http = { version = "0.6", features = ["fs"], optional = true }
@@ -30,6 +31,11 @@ bytes = { version = "1", optional = true }
 # 로그인(과제 ③): 비밀번호는 Argon2id로 해시해 저장하고, 세션 토큰은 SHA-256 값만 DB에 남긴다.
 argon2 = { version = "0.5", optional = true }
 sha2 = { version = "0.10", optional = true }
+# 여러 인스턴스(과제 ⑤): 환경변수 STREAMAPP_REDIS_URL이 있으면 채팅 이벤트를 Redis pub/sub로 다른 인스턴스에
+# 전달한다(`service::chat_relay`). 버전을 고정하고, 쓰는 기능(tokio 비동기 연결)만 켠다.
+redis = { version = "=1.8.2", default-features = false, features = ["tokio-comp"], optional = true }
+# Redis로 주고받는 채팅 이벤트를 JSON으로 바꾼다. dioxus가 이미 쓰는 크레이트와 합쳐진다.
+serde_json = { version = "1", optional = true }
 
 [features]
 # 이름을 바꾸면 안 된다: 서버 함수 매크로가 `feature = "server"`를 전제로 코드를 만든다.
@@ -49,6 +55,8 @@ server = [
     "dep:bytes",
     "dep:argon2",
     "dep:sha2",
+    "dep:redis",
+    "dep:serde_json",
 ]
 
 [dev-dependencies]
@@ -112,6 +120,11 @@ required-features = ["server"]
 [[test]]
 name = "payments_http"
 path = "tests/payments_http.rs"
+required-features = ["server"]
+
+[[test]]
+name = "multi_instance"
+path = "tests/multi_instance.rs"
 required-features = ["server"]
 
 [[test]]

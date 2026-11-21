@@ -1,0 +1,137 @@
+# StreamApp 앱(화면 SSR + 서버 함수 + 녹화방송 파일 + MediaMTX 연동). HPA(k8s/app/hpa.yaml)가 2~5개로 늘리고 줄인다.
+#
+# 인스턴스 밖 공용 상태(ADR 0007):
+#   - SQLite DB와 녹화방송 영상 파일: 공유 볼륨 /data(k8s/app/storage.yaml)
+#   - 로그인 세션, 휴대폰 송출 세션, 라이브 상태, 댓글, 후원: 위 DB
+#   - 채팅 이벤트: Redis pub/sub(k8s/app/redis.yaml)
+# 그래서 어느 파드가 요청을 받아도 같은 답을 내고, 파드가 늘거나 줄어도 로그인·녹화방송·댓글이 그대로다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: streamapp-config
+data:
+  # 컨테이너 안에서 모든 주소로 듣는다(Service가 파드 8080으로 보낸다).
+  IP: "0.0.0.0"
+  PORT: "8080"
+  STREAMAPP_DB: /data/streamapp.db
+  STREAMAPP_RECORDINGS_DIR: /data/recordings
+  # 브라우저(이 PC)가 닿는 공개 주소: kind가 이은 호스트 포트(k8s/kind-cluster.yaml)
+  STREAMAPP_HLS_BASE_URL: http://localhost:8888
+  STREAMAPP_OBS_SERVER: rtmp://localhost/
+  # 클러스터 안의 MediaMTX(Service `mediamtx`)
+  STREAMAPP_MEDIAMTX_API: http://mediamtx:9997
+  STREAMAPP_MEDIAMTX_WEBRTC: http://mediamtx:8889
+  # http://localhost:18080으로 접속하므로 Secure 쿠키를 끈다(HTTPS 배포에서만 켠다).
+  STREAMAPP_SECURE_COOKIE: "false"
+  # 채팅을 다른 인스턴스로 전달하는 Redis(Service `redis`)
+  STREAMAPP_REDIS_URL: redis://redis:6379
+  # 여러 인스턴스 모드: 새 파드가 시작하며 MediaMTX에 닿지 못해도 진행 중인 라이브를 닫지 않는다.
+  STREAMAPP_MULTI_INSTANCE: "true"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamapp
+  labels:
+    app: streamapp
+spec:
+  # 처음 띄우는 수. 그 뒤로는 HPA가 정한다(최소 2, 최대 5).
+  replicas: 2
+  selector:
+    matchLabels:
+      app: streamapp
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: streamapp
+    spec:
+      # 이미지의 비루트 사용자(Dockerfile). local-path 볼륨 폴더는 누구나 쓸 수 있게(0777) 만들어진다.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      # 종료 신호를 받은 파드에 Service가 요청을 보내지 않게 될 때까지 잠깐 기다린다(스케일 인 중 요청 실패 줄이기).
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: streamapp
+          # scripts\k8s-up.ps1이 docker build -t streamapp:local 후 kind load docker-image로 노드에 넣는다.
+          image: streamapp:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: streamapp-config
+            - secretRef:
+                name: streamapp-secrets
+          env:
+            # 응답 헤더 x-streamapp-instance에 파드 이름을 싣는다(요청 분산 확인용, api::instance).
+            - name: STREAMAPP_INSTANCE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: RUST_LOG
+              value: info
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          # HPA는 requests 대비 사용률을 본다(cpu 100m의 50% = 50m).
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          # GET /healthz: DB(SELECT 1)가 되면 200, 아니면 503. MediaMTX가 꺼져 있어도 200이다(api::health).
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: streamapp-data
+---
+# 여러 파드 앞의 요청 분산: Service가 준비된(readiness 통과) 파드 사이에 연결을 나눈다(kube-proxy).
+# NodePort 30080을 kind가 이 PC의 18080으로 잇는다 → http://localhost:18080
+apiVersion: v1
+kind: Service
+metadata:
+  name: streamapp
+spec:
+  type: NodePort
+  selector:
+    app: streamapp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30080

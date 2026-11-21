@@ -6,7 +6,7 @@
 
 ## 과제: 치지직 만들기
 
-과제의 각 단계는 앞 단계 기능을 유지한 채 이 저장소에서 이어서 확장한다(①→②→③→④→⑥). 배포한 서비스는 **https://smj0617.com**, 데스크톱 앱은 **https://smj0617.com/download**에 있다(아래 "⑥ 도메인·OCI 배포와 Windows/macOS 클라이언트"). 실행 방법은 [로컬에서 실행하기](#로컬에서-실행하기-windows), 환경변수는 [환경변수](#환경변수)에 있다.
+과제의 각 단계는 앞 단계 기능을 유지한 채 이 저장소에서 이어서 확장한다(①→②→③→④→⑤→⑥). 배포한 서비스는 **https://smj0617.com**, 데스크톱 앱은 **https://smj0617.com/download**에 있다(아래 "⑥ 도메인·OCI 배포와 Windows/macOS 클라이언트"). 실행 방법은 [로컬에서 실행하기](#로컬에서-실행하기-windows), 환경변수는 [환경변수](#환경변수)에 있다.
 
 ### ① 인증·인가 없는 녹화방송
 
@@ -223,6 +223,118 @@ PC만으로 미리 확인하려면 PC 브라우저에서 `http://localhost:8090/
 
 자동 테스트: [tests/donations.rs](packages/api/tests/donations.rs)(21개)가 가짜 결제 서비스로 주문 규칙(금액 범위, 메시지 길이, 자기 방송, 없는 방송, 결제 설정 없음), 확정과 방송별 내역·합계, 같은 승인 두 번·동시 승인·웹훅 반복·웹훅 뒤 성공 주소에서 한 번만 적립, 금액 조작·결제 서비스와 금액 불일치·결제 거절·연결 실패·남의 주문, 취소·실패 기록, 만료 통지, 라이브 후원, 녹화방송 삭제 뒤 기록 유지를 확인한다. [tests/payments_http.rs](packages/api/tests/payments_http.rs)(7개)는 가짜 토스페이먼츠 서버로 승인 요청의 인증 헤더·멱등키·본문, `ALREADY_PROCESSED_PAYMENT` 뒤 조회, 거절·처리 중·서버 오류 구분, 웹훅 반복 통지가 한 번만 적립되는지를 확인한다. 실제 토스페이먼츠에는 접속하지 않는다.
 
+### ⑤ 로컬 오토스케일
+
+①~④의 기능(녹화방송, 휴대폰 송출·시청, 회원가입·로그인과 권한 검사, 댓글, 후원)을 그대로 두고, 앱을 컨테이너 이미지로 만들어 **로컬 쿠버네티스(kind)** 에서 여러 인스턴스로 실행한다. CPU 사용률에 따라 HPA가 앱 파드를 2~5개로 늘리고 줄이며, 상태(DB·영상 파일·로그인 세션·휴대폰 송출 세션·라이브·댓글·채팅)는 인스턴스 밖 공용 저장소에 둔다. 결정 근거는 [ADR 0007](docs/adr/0007-multi-instance-state-shared-sqlite-and-redis-chat.md), 실제 실행 기록은 [docs/autoscale-verification.md](docs/autoscale-verification.md).
+
+**구현 범위**
+
+| 과제 요구 | 구현 |
+| --- | --- |
+| 서버 컨테이너 이미지 | [Dockerfile](Dockerfile)(멀티 스테이지: `rust:1.99.1-trixie` + dx 0.7.10 체크섬 확인 → `dx bundle --web --release --package web` → `debian:trixie-slim`, 비루트 UID 10001, `server` + `public/`), [.dockerignore](.dockerignore). 이미지 이름 `streamapp:local` |
+| 로컬 클러스터에서 여러 인스턴스 | kind 클러스터 [k8s/kind-cluster.yaml](k8s/kind-cluster.yaml)(노드 1개), 앱 Deployment `streamapp`(replicas 2, readiness·liveness·startup probe `GET /healthz`) [k8s/app/streamapp.yaml](k8s/app/streamapp.yaml) |
+| 지표 기준 최소·최대 자동 조절 | HPA `autoscaling/v2` [k8s/app/hpa.yaml](k8s/app/hpa.yaml): CPU 평균 50%(requests 100m 기준), 최소 2·최대 5, 늘리기는 기다리지 않고 15초마다 최대 2개, 줄이기는 60초 안정화 뒤 15초마다 1개. 지표는 metrics-server v0.9.1 [k8s/metrics-server/](k8s/metrics-server/)(kind용 `--kubelet-insecure-tls` 덧붙임) |
+| 여러 인스턴스 앞 요청 분산 | Service `streamapp`(NodePort 30080 → 이 PC의 18080). kube-proxy가 준비된 파드 사이에 연결을 나눈다. 세션이 DB에 있어 고정 세션이 필요 없다. 응답 헤더 `x-streamapp-instance`에 답한 파드 이름이 실린다(`STREAMAPP_INSTANCE_NAME`, [instance.rs](packages/api/src/instance.rs)) |
+| 상태를 인스턴스 밖 공용 저장소에 | 아래 "공용 저장소 설계와 한계" |
+| 부하 발생 | k6 스크립트 [loadtest/autoscale.js](loadtest/autoscale.js)(홈 SSR `/`·`/api/recordings`·`/api/live-channels`·`/healthz`를 4:2:2:1로, 요청마다 새 연결), 실행·관찰 [scripts/load-test.ps1](scripts/load-test.ps1), [scripts/k8s-watch.ps1](scripts/k8s-watch.ps1) |
+
+그 밖에 MediaMTX 1대([k8s/app/mediamtx.yaml](k8s/app/mediamtx.yaml), 설정 [k8s/app/mediamtx.yml](k8s/app/mediamtx.yml): 인증·송출 훅이 앱 Service `http://streamapp:8080`으로 간다. 공식 이미지 `1.21.3-ffmpeg`에는 curl이 없어 훅은 busybox `wget`으로 POST한다), Redis 1대([k8s/app/redis.yaml](k8s/app/redis.yaml)), 공유 볼륨([k8s/app/storage.yaml](k8s/app/storage.yaml))을 같은 네임스페이스 `streamapp`에 두고, [k8s/app/kustomization.yaml](k8s/app/kustomization.yaml)로 한 번에 적용한다.
+
+```text
+ 이 PC(브라우저·OBS·k6)
+   │ :18080              │ :1935 RTMP, :8888 HLS, :8189 ICE
+ ┌─┴──────────────── kind 노드(1개) ───────────────────────────────┐
+ │ Service streamapp(NodePort)       Service mediamtx-public(NodePort)│
+ │   │ 요청 분산                          │                          │
+ │ streamapp 파드 ×2~5(HPA) ◀─ 인증·훅 ─ MediaMTX                    │
+ │   │ │                                                            │
+ │   │ └─ pub/sub ─▶ Redis(채팅 중계)                                │
+ │   └─── /data ──▶ PVC streamapp-data(SQLite DB + 녹화방송 영상)    │
+ │ metrics-server ─▶ HPA(CPU 50%, 최소 2·최대 5)                     │
+ └──────────────────────────────────────────────────────────────────┘
+```
+
+**공용 저장소 설계와 한계**
+
+| 상태 | 어디에 | 코드 |
+| --- | --- | --- |
+| 사용자·채널·라이브·녹화방송·댓글·후원, 로그인 세션 | 공유 볼륨 `/data/streamapp.db`(SQLite, WAL·busy_timeout 5초) | 이미 DB에 있다. 동시에 시작한 파드끼리 연결·마이그레이션이 겹치면 다시 시도한다([db.rs](packages/api/src/service/db.rs) `connect_file`). 기본 사용자는 `BEGIN IMMEDIATE`로 한 번만 만든다([users.rs](packages/api/src/service/users.rs)) |
+| 녹화방송 영상 파일 | 공유 볼륨 `/data/recordings/` | 기존 `STREAMAPP_RECORDINGS_DIR` |
+| 휴대폰 송출 세션 → 채널(송출 종료 권한 확인) | DB 표 `whip_sessions`(마이그레이션 [0006](packages/api/migrations/0006_whip_sessions.sql)) | 이전에는 인스턴스 메모리. [whip.rs](packages/api/src/whip.rs), [whip_sessions.rs](packages/api/src/service/whip_sessions.rs). 종료 요청이 다른 파드로 가도 403·404·200이 같다 |
+| 채팅 이벤트(메시지·제목 변경·라이브 종료) | 인스턴스 메모리 + Redis pub/sub(`streamapp:chat:<채널ID>`) | [chat_relay.rs](packages/api/src/service/chat_relay.rs). `STREAMAPP_REDIS_URL`이 없으면 메모리만 쓴다(⑥ 그대로). Redis에 못 붙어도 앱은 뜨고 그 인스턴스 안 채팅은 되며, 다시 연결한다 |
+| 라이브 상태 | DB(MediaMTX 훅이 어느 파드로 가도 반영) | `STREAMAPP_MULTI_INSTANCE=true`면 시작 때 MediaMTX에 닿지 못해도 열린 라이브를 닫지 않는다([publish.rs](packages/api/src/service/publish.rs) `keeping_lives_if_unreachable`) |
+
+- **전제**: 노드가 하나라 모든 앱 파드가 같은 노드에서 ReadWriteOnce local-path 볼륨(노드의 폴더 하나)을 함께 마운트한다. 같은 커널·파일 시스템이라 SQLite의 파일 잠금과 WAL 공유 메모리가 파드 사이에서도 동작한다.
+- **한계**: 노드가 여럿이면 다른 노드의 파드는 이 볼륨을 마운트하지 못하고, 네트워크 파일 시스템 위의 SQLite는 잠금을 믿을 수 없다. 그때는 DB를 Postgres로, 영상을 오브젝트 스토리지(S3 호환)로 옮겨야 한다. SQLite는 쓰기를 한 번에 하나씩 하므로 파드를 늘려도 쓰기 처리량은 늘지 않는다. MediaMTX·Redis는 1대다.
+- **⑥ 배포(단일 VM)와의 차이**: VM은 `STREAMAPP_REDIS_URL`·`STREAMAPP_MULTI_INSTANCE`를 정하지 않으므로 채팅은 메모리 그대로이고, 시작 때 MediaMTX에 닿지 못하면 열린 라이브를 닫는(꺼져 있던 동안 놓친 종료 알림 보정) 이전 동작 그대로다. 새 마이그레이션 0006(`whip_sessions`)은 다음 배포 때 앱이 시작하면서 자동으로 적용된다.
+
+**실행 방법**
+
+필요한 도구: Docker Desktop(엔진 실행 중, 메모리 6GB 이상 권장), `kubectl`(Docker Desktop에 들어 있다). kind v0.33.0은 스크립트가 `.tools\`로 내려받고(체크섬 확인), k6는 Docker 이미지 `grafana/k6:1.8.3`로 돌린다. Rust·dx는 이미지 안에서 빌드하므로 PC에 없어도 된다. 로컬 개발(`dev.ps1`)의 MediaMTX와 같은 포트(1935·8888·8189)를 쓰므로 둘을 함께 켜지 않는다.
+
+```powershell
+# 1. 클러스터 만들기 → metrics-server → 이미지 빌드(처음 10~20분)·kind에 넣기 → 매니페스트 적용 → 준비 대기
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/k8s-up.ps1          # 이미지를 다시 빌드하지 않으려면 -SkipBuild
+# 2. 브라우저에서 http://localhost:18080 (빈 DB면 철수·영희·민수, 비밀번호는 k8s\app\secret.env)
+# 3. 부하 주기 + 파드 수 변화 기록(약 9분, loadtest\out\autoscale-<시각>.log, k6-<시각>.txt)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/load-test.ps1       # -Vus 60 -HoldSeconds 300 처럼 바꿀 수 있다
+#    부하 없이 상태만 보기: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/k8s-watch.ps1
+# 4. 지우기(클러스터와 그 안의 DB·영상이 사라진다)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/k8s-down.ps1
+```
+
+손으로 하려면: `docker build -t streamapp:local .` → `.tools\kind.exe create cluster --config k8s\kind-cluster.yaml` → `kubectl apply -k k8s\metrics-server` → `.tools\kind.exe load docker-image streamapp:local --name streamapp` → `copy k8s\app\secret.env.example k8s\app\secret.env` → `kubectl apply -k k8s\app`.
+
+**환경변수 예시**(앱 ConfigMap [k8s/app/streamapp.yaml](k8s/app/streamapp.yaml), 비밀 값은 Secret [k8s/app/secret.env.example](k8s/app/secret.env.example) → `secret.env`(git 제외))
+
+| 환경변수 | 클러스터 값 | 뜻 |
+| --- | --- | --- |
+| `IP`, `PORT` | `0.0.0.0`, `8080` | 컨테이너 안에서 듣는 주소 |
+| `STREAMAPP_DB` | `/data/streamapp.db` | 공유 볼륨의 SQLite |
+| `STREAMAPP_RECORDINGS_DIR` | `/data/recordings` | 공유 볼륨의 녹화방송 영상 폴더 |
+| `STREAMAPP_REDIS_URL` | `redis://redis:6379` | **새 값.** 채팅을 다른 인스턴스로 전달할 Redis. 없으면 메모리만 쓴다 |
+| `STREAMAPP_MULTI_INSTANCE` | `true` | **새 값.** 시작 때 MediaMTX에 닿지 못해도 라이브를 닫지 않는다 |
+| `STREAMAPP_INSTANCE_NAME` | 파드 이름(Downward API) | **새 값.** 응답 헤더 `x-streamapp-instance`. 없으면 붙이지 않는다 |
+| `STREAMAPP_MEDIAMTX_API`, `STREAMAPP_MEDIAMTX_WEBRTC` | `http://mediamtx:9997`, `http://mediamtx:8889` | 클러스터 안 MediaMTX |
+| `STREAMAPP_HLS_BASE_URL`, `STREAMAPP_OBS_SERVER` | `http://localhost:8888`, `rtmp://localhost/` | 이 PC에서 닿는 공개 주소(kind 호스트 포트) |
+| `STREAMAPP_SECURE_COOKIE` | `false` | http로 접속하므로 끈다 |
+| `STREAMAPP_DEFAULT_PASSWORD` | `test1234`(Secret, 시험 값) | 빈 DB의 기본 사용자 비밀번호 |
+| `STREAMAPP_TOSS_CLIENT_KEY`, `STREAMAPP_TOSS_SECRET_KEY` | 비어 있음(Secret) | 넣으면 후원 결제가 켜진다(④) |
+
+**스케일 아웃/인 확인 절차**
+
+1. `k8s-up.ps1`이 끝나면 `kubectl --context kind-streamapp -n streamapp get pods,hpa`에 앱 파드 2개가 `1/1 Running`, HPA가 `cpu: 1%/50%  2  5  2`로 보인다. `curl.exe -i http://localhost:18080/healthz`를 여러 번 보내면 `x-streamapp-instance`에 두 파드 이름이 번갈아 나온다.
+2. 브라우저에서 회원가입·로그인하고 녹화방송을 올리고 댓글을 단다. (선택) `.\scripts\test-publish.ps1 -ChannelId <채널ID> -StreamKey <송출 키>`로 라이브를 켠다.
+3. `load-test.ps1`을 실행한다. 기록에서 HPA CPU가 50%를 넘고 HPA 파드 수가 2 → 3 → 5로 늘며, 요청 분산 열에 새 파드 이름이 나타나는지 본다.
+4. 부하 중에 브라우저를 새로 고쳐 로그인 상태·녹화방송·댓글·라이브가 그대로인지 본다(어느 파드가 답해도 같다).
+5. 부하가 끝나면 CPU가 떨어지고 60초 뒤부터 15초마다 1개씩 2개까지 줄어드는지 본다. 줄어든 뒤에 4를 다시 확인한다.
+6. `k8s-down.ps1`로 지운다.
+
+**실제 확인 결과(2026-11-21)** — 전체 기록과 기능 확인 표는 [docs/autoscale-verification.md](docs/autoscale-verification.md)
+
+`load-test.ps1` 기본값(가상 사용자 40, 유지 4분)에서 `k8s-watch.ps1`이 남긴 인스턴스 수 변화(발췌. 열: 시각 | HPA CPU(현재/목표) | HPA 파드 | 앱 파드 Ready/전체 | 파드별 CPU | `/healthz` 12번에 답한 파드):
+
+```text
+22:24:04 | 1%/50%            | 2        | 2/2                 | d5wsp=1m nw5wf=1m | d5wsp=3 nw5wf=9
+22:24:15 | 70%/50%           | 2        | 3/3                 | d5wsp=79m nw5wf=61m | 9vvmt=2 d5wsp=7 nw5wf=3
+22:24:47 | 318%/50%          | 3        | 5/5                 | 9vvmt=343m d5wsp=302m nw5wf=311m | 4944w=2 9vvmt=3 d5wsp=3 nw5wf=2 wgsmv=2
+22:25:30 | 222%/50%          | 5        | 5/5                 | 4944w=216m 9vvmt=237m d5wsp=202m nw5wf=220m wgsmv=235m | 4944w=4 9vvmt=2 d5wsp=3 nw5wf=1 wgsmv=2
+22:28:43 | 194%/50%          | 5        | 5/5                 | 4944w=204m 9vvmt=170m d5wsp=181m nw5wf=236m wgsmv=183m | 4944w=3 9vvmt=1 d5wsp=5 nw5wf=1 wgsmv=2
+22:29:15 | 1%/50%            | 5        | 5/5                 | 4944w=1m 9vvmt=1m d5wsp=4m nw5wf=1m wgsmv=1m | 4944w=4 9vvmt=2 nw5wf=3 wgsmv=3
+22:29:46 | 1%/50%            | 5        | 4/4                 | 4944w=1m 9vvmt=1m d5wsp=1m nw5wf=1m wgsmv=1m | 4944w=1 9vvmt=3 d5wsp=5 nw5wf=3
+22:30:07 | 1%/50%            | 4        | 3/3                 | 4944w=1m 9vvmt=1m d5wsp=1m nw5wf=1m | 9vvmt=3 d5wsp=4 nw5wf=5
+22:30:30 | 1%/50%            | 2        | 2/2                 | 9vvmt=1m d5wsp=1m nw5wf=2m | d5wsp=6 nw5wf=6
+```
+
+- 스케일 아웃 2 → 3 → 5(부하 시작 뒤 약 45초), 부하가 끝나고 약 1분 뒤부터 스케일 인 5 → 4 → 3 → 2(약 45초).
+- k6: 188,229 요청, 실패 0.00%(스케일 아웃·인 동안 포함), p95 4.75ms.
+- 같은 세션 쿠키로 `GET /api/current-user` 12번: 파드 2개일 때, 5개일 때(5개 파드 모두가 답함), 다시 2개로 줄어든 뒤 모두 12/12 로그인 상태. 올린 녹화방송(영상 Range 206)·댓글·켜 둔 라이브가 처음부터 끝까지 그대로였다.
+- 서로 다른 파드에 붙은 채팅 WebSocket 두 개 사이에 메시지가 전달되고(Redis), 송출을 끄자 다른 파드의 시청자에게 라이브 종료가 갔다. 두 파드가 빈 DB로 동시에 뜰 때 실제로 마이그레이션이 한 번 겹쳤고 다시 시도해 정상 시작했다.
+
+자동 테스트: [tests/multi_instance.rs](packages/api/tests/multi_instance.rs)(같은 파일 DB에 따로 연결한 두 인스턴스로 동시 마이그레이션·기본 사용자 한 번, 세션 공유, 다른 인스턴스가 받은 훅 반영, MediaMTX에 닿지 못한 새 인스턴스의 라이브 유지, Redis가 꺼져도 인스턴스 안 채팅, 응답 헤더를 확인한다. Redis 중계 2개는 `#[ignore]`로 Redis가 있을 때만 돈다), [tests/whip_http.rs](packages/api/tests/whip_http.rs)의 다른 인스턴스로 간 송출 종료 요청.
+
+- 이번 단계에서 하지 않은 것: 여러 노드 클러스터(Postgres·오브젝트 스토리지가 필요), MediaMTX·Redis 여러 대, 클러스터 안 HTTPS·인그레스, 클러스터에서의 휴대폰 송출(ICE 8189를 이 PC에만 열고 `webrtcAdditionalHosts`를 비워 두었다. 확인하지 않음), 이미지 레지스트리에 올리기, CPU 말고 다른 지표(메모리·요청 수)의 오토스케일, Redis가 끊긴 동안 놓친 채팅 다시 보내기.
+
 ### ⑥ 도메인·OCI 배포와 Windows/macOS 클라이언트
 
 ①~④의 기능(녹화방송, 휴대폰 송출·시청, 회원가입·로그인과 권한 검사, 댓글, 후원)을 그대로 두고, 백엔드를 OCI Always Free VM에 배포해 구매한 도메인의 HTTPS로 제공한다. 같은 Rust 코드베이스로 Windows·macOS 데스크톱 클라이언트를 만들어 다운로드 페이지에서 배포한다. 자세한 재현 절차는 [docs/deploy.md](docs/deploy.md)(서버)와 [docs/desktop-client.md](docs/desktop-client.md)(클라이언트)에 있다.
@@ -330,6 +442,7 @@ PC만으로 미리 확인하려면 PC 브라우저에서 `http://localhost:8090/
 | 데스크톱 | macOS x86_64(Intel) | `StreamApp-macos-x64.dmg`(5.3MB) | 빌드만 확인(교차 빌드 성공). 실행은 확인하지 못했다 |
 | 데스크톱 | Windows x64 | `StreamApp-windows-x64.msi`(4.3MB) | 빌드만 확인. 설치는 setup.exe로만 확인했다 |
 | 휴대폰 송출 | Galaxy S24(5G), 휴대폰 브라우저 → https://smj0617.com/broadcast | — | 성공: 로그인 → 카메라 켜기·권한 허용 → 방송 시작("방송 중") → PC 브라우저 홈의 LIVE 카드에서 휴대폰 세로 영상 재생 → 휴대폰에서 방송 종료 → 시청 화면에 "라이브가 종료되었습니다"와 "종료" 표시. 영상은 휴대폰에서 VM의 ICE 8189로 바로 간다(`MTX_WEBRTCADDITIONALHOSTS`=공인 IP) |
+| 데스크톱 로그인·댓글(v0.6.1) | Windows 11 Home 26200, x64, Release `v0.6.1` setup.exe → 배포 서버(0.6.1) | `StreamApp-windows-x64-setup.exe` | 성공: 비로그인 녹화방송 화면에 "로그인하면 댓글을 쓸 수 있습니다" → 영희로 로그인(상단 "영희 / 로그아웃") → 댓글 쓰기("댓글 1", 내 댓글에 수정·삭제, 웹 API `GET /api/recordings/1/comments`에도 보임) → 삭제(서버 0건) → 로그아웃(비로그인 안내, `session.txt` 삭제) |
 
 - 이번 단계에서 하지 않은 것: Apple 개발자 인증서 서명·공증과 Windows 코드 서명(처음 실행 때 OS 경고가 뜬다), 앱 자동 업데이트, Windows ARM64·Linux 데스크톱 패키지, 데스크톱 앱 안의 회원가입·채팅·후원, 세션 토큰의 OS 자격 증명 저장소 보관, TURN 서버(대칭형 NAT 망에서 휴대폰 송출).
 
@@ -394,10 +507,13 @@ PC만으로 미리 확인하려면 PC 브라우저에서 `http://localhost:8090/
 ```text
 packages/
 ├── api/                 # 서버 함수, 앱 서비스(Dioxus 비의존), MediaMTX 연동·녹화방송 파일·휴대폰 방송 중계·결제 웹훅 axum Router, 토스페이먼츠 클라이언트
-│   ├── migrations/      # 0001 사용자·채널, 0002 라이브, 0003 녹화방송, 0004 비밀번호·세션·댓글, 0005 후원 (기존 파일은 수정하지 말고 새 번호로 추가)
+│   ├── migrations/      # 0001 사용자·채널, 0002 라이브, 0003 녹화방송, 0004 비밀번호·세션·댓글, 0005 후원, 0006 휴대폰 송출 세션 (기존 파일은 수정하지 말고 새 번호로 추가)
 │   └── tests/           # 앱 서비스(메모리 SQLite, 가짜 결제 서비스), MediaMTX 연동·녹화방송 파일·휴대폰 방송 중계·결제 서비스 HTTP 테스트
 └── web/                 # 화면: 홈, 시청 페이지(후원·댓글), 휴대폰 방송, 녹화방송 등록·상세(관리·후원·댓글), 후원 결과, 내 채널 설정, 로그인·회원가입
-scripts/                 # dev.ps1, test-publish.ps1
+scripts/                 # dev.ps1, test-publish.ps1, k8s-up.ps1·k8s-down.ps1·k8s-watch.ps1·load-test.ps1(⑤ 로컬 오토스케일)
+Dockerfile               # 서버 컨테이너 이미지(⑤), .dockerignore
+k8s/                     # ⑤ kind 클러스터 설정, metrics-server, app/(앱·HPA·MediaMTX·Redis·공유 볼륨 매니페스트)
+loadtest/                # ⑤ k6 부하 스크립트(결과는 loadtest/out/, git 제외)
 tools/mediamtx/          # MediaMTX v1.21.3 설정 (실행 파일은 dev.ps1이 .tools\로 내려받음)
 ```
 
@@ -433,6 +549,9 @@ $env:STREAMAPP_DEFAULT_PASSWORD = "test1234"             # 빈 DB의 기본 사�
 $env:STREAMAPP_TOSS_CLIENT_KEY = "test_ck_..."           # 토스페이먼츠 API 개별 연동 테스트 클라이언트 키(브라우저 결제창용). 없으면 후원 결제를 끈다
 $env:STREAMAPP_TOSS_SECRET_KEY = "test_sk_..."           # 토스페이먼츠 테스트 시크릿 키(서버의 결제 승인·조회용, 비밀 값). test_로 시작하지 않으면 받지 않는다
 # $env:STREAMAPP_TOSS_API = "https://api.tosspayments.com" # 결제 서비스 API 주소(기본값 그대로 둔다)
+# $env:STREAMAPP_REDIS_URL = "redis://127.0.0.1:6379"   # (⑤ 여러 인스턴스) 채팅을 다른 인스턴스로 전달할 Redis. 없으면 메모리만
+# $env:STREAMAPP_MULTI_INSTANCE = "true"                 # (⑤ 여러 인스턴스) 시작 때 MediaMTX에 닿지 못해도 라이브를 닫지 않는다
+# $env:STREAMAPP_INSTANCE_NAME = "local-1"               # (⑤) 응답 헤더 x-streamapp-instance에 실을 인스턴스 이름
 ```
 
 ## 테스트
@@ -445,3 +564,14 @@ cargo check -p web --target wasm32-unknown-unknown --no-default-features --featu
 cargo clippy --workspace --all-targets --features api/server,web/server -- -D warnings
 cargo fmt --all --check
 ```
+
+과제 ⑤의 Redis 채팅 중계 통합 테스트는 Redis가 있어야 해서 기본으로 건너뛴다(`#[ignore]`). Docker로 Redis를 띄워 돌린다.
+
+```powershell
+docker run -d --rm -p 6379:6379 --name streamapp-test-redis redis:8.8.4-alpine
+$env:STREAMAPP_TEST_REDIS_URL = "redis://127.0.0.1:6379"
+cargo test -p api --features server --test multi_instance -- --include-ignored
+docker stop streamapp-test-redis
+```
+
+컨테이너 이미지와 쿠버네티스 매니페스트는 [.github/workflows/container.yml](.github/workflows/container.yml)이 관련 파일이 바뀐 PR에서 확인한다(이미지 빌드, `kubectl kustomize k8s/app`·`k8s/metrics-server`). 로컬에서는 `docker build -t streamapp:local .`와 `kubectl kustomize k8s/app`(먼저 `secret.env.example`을 `secret.env`로 복사).

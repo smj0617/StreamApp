@@ -2,12 +2,18 @@
 //!
 //! 채팅은 라이브 하나에 딸려 라이브 중에만 열린다. 메시지는 저장하지 않고, 채팅마다(채널 ID로 찾는다)
 //! 메모리에 둔 tokio broadcast로 그 채팅의 참여자에게 보내기만 한다.
+//!
+//! 앱 인스턴스가 여럿이면(과제 ⑤) 같은 채팅의 참여자가 서로 다른 인스턴스에 붙어 있을 수 있다. 그래서
+//! Redis 채팅 중계([`super::chat_relay`])를 끼우면 이 인스턴스의 참여자에게 바로 보내는 것과 함께 같은
+//! 이벤트를 Redis에 올리고, 다른 인스턴스가 올린 이벤트를 받아 이 인스턴스의 참여자에게 보낸다. 중계가
+//! 없으면(단일 인스턴스, 과제 ⑥ 배포) 지금처럼 메모리만 쓴다.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::broadcast;
 
+use super::chat_relay::ChatRelay;
 use super::{AppService, ServiceError};
 use crate::dto::ChatMessage;
 use crate::rules::MAX_CHAT_CHARS;
@@ -48,15 +54,16 @@ impl ChatSubscription {
     }
 }
 
-/// 채팅마다 broadcast 송신자 하나. 잠금 구간에서 `.await`하지 않으므로 `std::sync::Mutex`로 충분하다.
+/// 이 인스턴스의 채팅마다 broadcast 송신자 하나. 잠금 구간에서 `.await`하지 않으므로 `std::sync::Mutex`로
+/// 충분하다. 다른 인스턴스에서 온 이벤트도 여기로 보낸다([`super::chat_relay`]).
 #[derive(Clone, Default)]
-pub(super) struct ChatHub {
+pub(super) struct LocalChats {
     /// 채널 ID → 그 채널에서 열린 채팅의 broadcast 송신자
     chats: Arc<Mutex<HashMap<String, broadcast::Sender<ChatEvent>>>>,
 }
 
-impl ChatHub {
-    fn subscribe(&self, channel_id: &str) -> ChatSubscription {
+impl LocalChats {
+    pub(super) fn subscribe(&self, channel_id: &str) -> ChatSubscription {
         let mut chats = self.chats.lock().expect("채팅 허브 잠금");
         let sender = chats
             .entry(channel_id.to_owned())
@@ -66,7 +73,7 @@ impl ChatHub {
         }
     }
 
-    /// 그 채널의 채팅 참여자 모두에게 이벤트를 보낸다. 참여자가 없으면 아무것도 하지 않는다.
+    /// 이 인스턴스의 그 채널 참여자 모두에게 이벤트를 보낸다. 참여자가 없으면 아무것도 하지 않는다.
     pub(super) fn send(&self, channel_id: &str, event: ChatEvent) {
         let mut chats = self.chats.lock().expect("채팅 허브 잠금");
         if let Some(sender) = chats.get(channel_id) {
@@ -77,8 +84,8 @@ impl ChatHub {
         }
     }
 
-    /// 그 채널의 참여자 모두에게 라이브 종료를 알리고 broadcast를 치운다. 참여자의 구독은 알림을
-    /// 받은 뒤 끝나고, 같은 채널의 다음 라이브는 새 broadcast를 쓴다.
+    /// 이 인스턴스의 그 채널 참여자 모두에게 라이브 종료를 알리고 broadcast를 치운다. 참여자의 구독은
+    /// 알림을 받은 뒤 끝나고, 같은 채널의 다음 라이브는 새 broadcast를 쓴다.
     pub(super) fn end_live(&self, channel_id: &str) {
         let removed = self
             .chats
@@ -99,6 +106,46 @@ impl ChatHub {
         {
             chats.remove(channel_id);
         }
+    }
+}
+
+/// 채팅 허브: 이 인스턴스의 참여자([`LocalChats`])와, 있으면 다른 인스턴스로 이벤트를 전달하는 Redis 중계.
+#[derive(Clone, Default)]
+pub(super) struct ChatHub {
+    local: LocalChats,
+    relay: Option<ChatRelay>,
+}
+
+impl ChatHub {
+    /// Redis 채팅 중계를 끼운다. 다른 인스턴스에서 온 이벤트는 이 허브의 참여자에게 보낸다.
+    pub(super) fn with_relay(mut self, relay: ChatRelay) -> Self {
+        relay.deliver_remote_events_to(self.local.clone());
+        self.relay = Some(relay);
+        self
+    }
+
+    fn subscribe(&self, channel_id: &str) -> ChatSubscription {
+        self.local.subscribe(channel_id)
+    }
+
+    /// 그 채널의 채팅 참여자 모두(중계가 있으면 다른 인스턴스의 참여자까지)에게 이벤트를 보낸다.
+    pub(super) fn send(&self, channel_id: &str, event: ChatEvent) {
+        if let Some(relay) = &self.relay {
+            relay.publish(channel_id, &event);
+        }
+        self.local.send(channel_id, event);
+    }
+
+    /// 그 채널의 참여자 모두(중계가 있으면 다른 인스턴스의 참여자까지)에게 라이브 종료를 알린다.
+    pub(super) fn end_live(&self, channel_id: &str) {
+        if let Some(relay) = &self.relay {
+            relay.publish(channel_id, &ChatEvent::LiveEnded);
+        }
+        self.local.end_live(channel_id);
+    }
+
+    fn forget_if_unused(&self, channel_id: &str) {
+        self.local.forget_if_unused(channel_id);
     }
 }
 

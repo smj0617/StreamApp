@@ -102,3 +102,16 @@ pub async fn service_with_recordings() -> (AppService, FakeClock, TempDir) {
     let svc = svc.with_recordings_dir(dir.path().join("recordings"));
     (svc, clock, dir)
 }
+
+/// 앱 인스턴스 둘(과제 ⑤): 임시 폴더의 같은 파일 DB에 따로 연결한(풀이 서로 다른) 서비스 둘. 여러 파드가
+/// 공유 볼륨의 DB를 함께 쓰는 것과 같다. 두 연결을 동시에 시작해 마이그레이션이 겹쳐도 되는지도 함께 본다.
+pub async fn two_instances() -> (AppService, AppService, TempDir) {
+    let dir = TempDir::new();
+    let path = dir.path().join("shared.db");
+    let (first, second) = tokio::join!(db::connect_file(&path), db::connect_file(&path));
+    (
+        AppService::new(first.expect("첫 인스턴스 DB 연결")),
+        AppService::new(second.expect("둘째 인스턴스 DB 연결")),
+        dir,
+    )
+}

@@ -1,0 +1,23 @@
+# 공용 저장소 1: 앱 인스턴스(파드)가 모두 함께 마운트하는 볼륨(/data).
+#   /data/streamapp.db      SQLite DB(사용자, 로그인 세션, 채널, 라이브, 녹화방송, 댓글, 후원, 휴대폰 송출 세션)
+#   /data/recordings/       녹화방송 영상 파일
+#
+# 전제(ADR 0007): kind 클러스터의 노드가 하나라서(k8s/kind-cluster.yaml) 앱 파드가 모두 같은 노드에 뜬다.
+# ReadWriteOnce는 "한 노드에서만 마운트"라는 뜻이므로 같은 노드의 여러 파드가 함께 마운트할 수 있고,
+# local-path(kind 기본 StorageClass `standard`)는 노드의 폴더 하나라서 SQLite의 파일 잠금·WAL 공유 메모리가
+# 파드 사이에도 그대로 동작한다.
+#
+# 한계: 노드가 여럿이면 다른 노드의 파드는 이 볼륨을 마운트하지 못한다(ReadWriteMany가 필요하고, 네트워크
+# 파일 시스템 위의 SQLite는 잠금을 믿을 수 없다). 그때는 DB를 Postgres 같은 DB 서버로, 영상 파일을 오브젝트
+# 스토리지(S3 호환)로 옮겨야 한다.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: streamapp-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 2Gi

@@ -40,6 +40,23 @@ pub const DEFAULT_PASSWORD: &str = "test1234";
 /// 배포에서는 `rtmp://<도메인>/`이다.
 pub const OBS_SERVER_ENV: &str = "STREAMAPP_OBS_SERVER";
 
+/// 채팅 이벤트를 다른 앱 인스턴스에 전달할 Redis 주소(예: `redis://redis:6379`)를 주는 환경변수(과제 ⑤).
+/// 없거나 비어 있으면 채팅은 이 인스턴스의 메모리 안에서만 오간다(단일 인스턴스, 과제 ⑥ 배포).
+pub const REDIS_URL_ENV: &str = "STREAMAPP_REDIS_URL";
+/// 여러 앱 인스턴스가 같은 DB를 함께 쓰는지 알려 주는 환경변수(과제 ⑤). `true`·`1`·`yes`면 시작할 때
+/// MediaMTX에 연결하지 못해도 열린 라이브를 닫지 않는다([`PublishingStatus::keeping_lives_if_unreachable`]).
+pub const MULTI_INSTANCE_ENV: &str = "STREAMAPP_MULTI_INSTANCE";
+
+/// 환경변수가 켜짐(`true`·`1`·`yes`, 대소문자 무시)인지.
+fn flag_from_env(name: &str) -> bool {
+    std::env::var(name).is_ok_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "true" | "1" | "yes"
+        )
+    })
+}
+
 /// 환경변수 값(앞뒤 공백과 끝의 `/`를 지운 것). 없거나 비어 있으면 `None`.
 fn url_from_env(name: &str) -> Option<String> {
     std::env::var(name)
@@ -84,6 +101,10 @@ pub async fn init_from_env() -> anyhow::Result<AppService> {
     if let Some(obs_server) = url_from_env(OBS_SERVER_ENV) {
         service = service.with_obs_server(&obs_server);
     }
+    if let Some(redis_url) = url_from_env(REDIS_URL_ENV) {
+        service = service.with_chat_relay(&redis_url)?;
+        tracing::info!("채팅 중계: Redis로 다른 인스턴스와 채팅 이벤트를 주고받습니다");
+    }
     if let Some(payments) = toss_payments::payments_from_env() {
         service = service.with_payments(payments);
     }
@@ -100,16 +121,25 @@ pub async fn init_from_env() -> anyhow::Result<AppService> {
             "비밀번호 없이 만든 이전 단계 사용자 {filled}명에게 기본 비밀번호를 넣었습니다"
         );
     }
-    reconcile_with_mediamtx(&service).await?;
+    reconcile_with_mediamtx(&service, flag_from_env(MULTI_INSTANCE_ENV)).await?;
     Ok(service)
 }
 
 /// 앱이 꺼져 있던 동안 놓친 송출 시작·종료 알림을 보정한다: MediaMTX Control API로 지금 송출 중인
 /// 경로를 한 번 조회해 송출 상태 맞추기를 부른다. 연결할 수 없으면 송출 중인 채널이 없다고 보고(열린
 /// 라이브를 모두 닫는다), 답을 쓸 수 없으면 라이브를 그대로 둔다.
-async fn reconcile_with_mediamtx(service: &AppService) -> Result<(), ServiceError> {
+///
+/// 여러 인스턴스 모드(`multi_instance`, 환경변수 [`MULTI_INSTANCE_ENV`])에서는 연결할 수 없을 때도 라이브를
+/// 그대로 둔다: 스케일 아웃으로 새로 뜬 인스턴스가 진행 중인 라이브를 닫지 않게 한다.
+async fn reconcile_with_mediamtx(
+    service: &AppService,
+    multi_instance: bool,
+) -> Result<(), ServiceError> {
     let address = mediamtx_api::address_from_env();
-    let status = mediamtx_api::publishing_status(&address).await;
+    let mut status = mediamtx_api::publishing_status(&address).await;
+    if multi_instance {
+        status = status.keeping_lives_if_unreachable();
+    }
     match &status {
         PublishingStatus::Known(paths) => {
             tracing::info!(

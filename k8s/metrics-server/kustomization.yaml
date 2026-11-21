@@ -1,0 +1,19 @@
+# metrics-server v0.9.1(파드 CPU 사용량 → HPA). components.yaml은 공식 릴리스 파일을 그대로 넣었다:
+#   https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.9.1/components.yaml
+# kind의 kubelet은 공인 인증서가 아닌 자체 서명 인증서를 쓰므로 --kubelet-insecure-tls를 덧붙인다(로컬 전용).
+#   kubectl apply -k k8s/metrics-server
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - components.yaml
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: metrics-server
+      namespace: kube-system
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --kubelet-insecure-tls

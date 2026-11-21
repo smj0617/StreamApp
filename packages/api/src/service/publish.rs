@@ -17,6 +17,22 @@ pub enum PublishingStatus {
     Unknown,
 }
 
+impl PublishingStatus {
+    /// 앱 인스턴스가 여럿일 때(과제 ⑤) 시작 시 송출 상태 맞추기에 쓸 상태: 연결할 수 없음
+    /// ([`PublishingStatus::Unreachable`])을 알 수 없음([`PublishingStatus::Unknown`])으로 바꾸고 나머지는 그대로다.
+    ///
+    /// 인스턴스 하나만 있으면 그 인스턴스가 꺼져 있던 동안 놓친 종료 알림을 보정하려고 열린 라이브를 모두
+    /// 닫는다. 그러나 여럿이면 스케일 아웃으로 새로 뜬 인스턴스가 MediaMTX에 잠깐 닿지 않았다는 이유로,
+    /// 다른 인스턴스가 훅을 받아 열어 둔 진행 중인 라이브를 닫으면 안 된다. 송출 종료는 훅이 어느 인스턴스로
+    /// 가든 공용 DB에 반영된다.
+    pub fn keeping_lives_if_unreachable(self) -> Self {
+        match self {
+            PublishingStatus::Unreachable => PublishingStatus::Unknown,
+            other => other,
+        }
+    }
+}
+
 impl AppService {
     /// 송출 허용 판단: 그 채널이 있고 송출 키가 그 채널의 것이면 `true`(허용), 아니면 `false`(거절).
     pub async fn can_publish(
