@@ -12,6 +12,7 @@
 mod auth;
 mod channels;
 mod chat;
+mod chat_relay;
 mod comments;
 pub mod db;
 mod donations;
@@ -22,6 +23,7 @@ mod publish;
 mod recordings;
 mod users;
 mod watch;
+mod whip_sessions;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -43,7 +45,8 @@ pub type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
 pub struct AppService {
     pool: SqlitePool,
     clock: Clock,
-    /// 열린 채팅마다 tokio broadcast 하나. 메모리에만 있다(채팅은 저장하지 않는다).
+    /// 열린 채팅마다 tokio broadcast 하나. 메모리에만 있다(채팅은 저장하지 않는다). Redis 채팅 중계를
+    /// 끼우면([`AppService::with_chat_relay`]) 다른 인스턴스의 참여자와도 이벤트를 주고받는다.
     chat: chat::ChatHub,
     /// 녹화방송 영상 파일을 두는 폴더
     recordings_dir: PathBuf,
@@ -94,6 +97,16 @@ impl AppService {
         self
     }
 
+    /// Redis 채팅 중계를 끼운다(과제 ⑤, 앱 인스턴스가 여럿일 때). 채팅 이벤트를 Redis pub/sub로 다른
+    /// 인스턴스에 전달한다. `redis_url`의 모양이 잘못됐으면 오류지만, Redis가 꺼져 있어도 오류가 아니다
+    /// (이 인스턴스 안의 채팅은 그대로 되고 다른 인스턴스로의 전달만 끊긴다). tokio 런타임 안에서 불러야 한다.
+    pub fn with_chat_relay(mut self, redis_url: &str) -> Result<Self, ServiceError> {
+        let relay = chat_relay::ChatRelay::connect(redis_url)
+            .map_err(|e| ServiceError::ChatRelay(e.to_string()))?;
+        self.chat = self.chat.with_relay(relay);
+        Ok(self)
+    }
+
     /// 결제 서비스를 끼운다. 끼우지 않으면 후원 주문을 만들지 않는다([`ServiceError::PaymentsNotConfigured`]).
     pub fn with_payments(mut self, payments: Payments) -> Self {
         self.payments = Some(payments);
@@ -137,7 +150,8 @@ impl AppService {
     }
 }
 
-/// 서비스 동작이 실패한 이유. 서버 잘못([`ServiceError::is_internal`]: `Database`, `File`, `PasswordHash`) 말고는 모두
+/// 서비스 동작이 실패한 이유. 서버 잘못([`ServiceError::is_internal`]: `Database`, `File`, `PasswordHash`,
+/// `ChatRelay`) 말고는 모두
 /// 규칙 위반이며, 메시지는 화면에 그대로 보여 줄 거절 사유다.
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
@@ -149,6 +163,9 @@ pub enum ServiceError {
     /// 비밀번호 해시를 만들지 못했다(서버 잘못).
     #[error("비밀번호 해시 오류: {0}")]
     PasswordHash(String),
+    /// Redis 채팅 중계 주소가 잘못됐다(서버 설정 잘못).
+    #[error("채팅 중계 설정 오류: {0}")]
+    ChatRelay(String),
     #[error("닉네임은 앞뒤 공백을 뺀 2~10자여야 합니다")]
     NicknameLength,
     #[error("닉네임에는 한글, 영문, 숫자만 쓸 수 있습니다")]
@@ -235,7 +252,10 @@ impl ServiceError {
     pub fn is_internal(&self) -> bool {
         matches!(
             self,
-            ServiceError::Database(_) | ServiceError::File(_) | ServiceError::PasswordHash(_)
+            ServiceError::Database(_)
+                | ServiceError::File(_)
+                | ServiceError::PasswordHash(_)
+                | ServiceError::ChatRelay(_)
         )
     }
 
@@ -244,9 +264,10 @@ impl ServiceError {
     /// 규칙 위반 400.
     pub fn status_code(&self) -> u16 {
         match self {
-            ServiceError::Database(_) | ServiceError::File(_) | ServiceError::PasswordHash(_) => {
-                500
-            }
+            ServiceError::Database(_)
+            | ServiceError::File(_)
+            | ServiceError::PasswordHash(_)
+            | ServiceError::ChatRelay(_) => 500,
             ServiceError::NotSignedIn | ServiceError::LoginFailed => 401,
             ServiceError::NotBroadcastOwner
             | ServiceError::NotCommentAuthor

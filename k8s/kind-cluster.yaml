@@ -1,0 +1,33 @@
+# 로컬 오토스케일(과제 ⑤)용 kind 클러스터: 노드 1개(control-plane이 워크로드도 돌린다).
+#   .tools\kind.exe create cluster --config k8s\kind-cluster.yaml   (scripts\k8s-up.ps1이 한다)
+#
+# 노드가 하나라서 앱 파드가 모두 같은 노드에 뜨고, 공유 볼륨(ReadWriteOnce, local-path)을 함께 마운트할 수 있다
+# (k8s/app/storage.yaml). 노드 이미지는 kind v0.33.0의 기본값(kindest/node:v1.37.0, 다이제스트 고정)이다.
+#
+# 호스트(이 PC) 포트 → 노드의 NodePort(k8s/app/*.yaml의 Service와 같아야 한다):
+#   18080 TCP → 30080  앱(streamapp Service). 8080은 로컬 개발(scripts\dev.ps1)과 겹치지 않게 비운다.
+#    8888 TCP → 30888  MediaMTX HLS(라이브 시청). 앱의 STREAMAPP_HLS_BASE_URL=http://localhost:8888
+#    1935 TCP → 31935  MediaMTX RTMP(OBS·ffmpeg 송출). 앱의 STREAMAPP_OBS_SERVER=rtmp://localhost/
+#    8189 UDP·TCP → 30189  MediaMTX WebRTC ICE(휴대폰 방송). 이 PC의 브라우저에서만 닿는다.
+# 로컬 개발(dev.ps1)의 MediaMTX와 같은 포트(1935·8888·8189)를 쓰므로 둘을 함께 켜지 않는다.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: streamapp
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 18080
+        protocol: TCP
+      - containerPort: 30888
+        hostPort: 8888
+        protocol: TCP
+      - containerPort: 31935
+        hostPort: 1935
+        protocol: TCP
+      - containerPort: 30189
+        hostPort: 8189
+        protocol: UDP
+      - containerPort: 30189
+        hostPort: 8189
+        protocol: TCP

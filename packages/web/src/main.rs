@@ -51,10 +51,11 @@ fn main() {
 
     // 서버: DB 연결·마이그레이션·기본 데이터를 준비하고, 서버 함수가 꺼내 쓰도록
     // 앱 서비스를 Extension으로 붙인다. 커스텀 라우터를 합칠 때는 `.merge(..)` 뒤에 `.layer(..)`.
+    // 인스턴스 이름(STREAMAPP_INSTANCE_NAME, 과제 ⑤)이 있으면 모든 응답에 답한 인스턴스를 붙인다.
     #[cfg(feature = "server")]
     dioxus::serve(|| async move {
         let service = api::server::init_from_env().await?;
-        Ok(dioxus::server::router(App)
+        let router = dioxus::server::router(App)
             .merge(api::mediamtx::router(service.clone()))
             .merge(api::recording_files::router(service.clone()))
             .merge(api::payment_webhook::router(service.clone()))
@@ -66,7 +67,11 @@ fn main() {
                 service.clone(),
                 &api::server::mediamtx_api::address_from_env(),
             ))
-            .layer(dioxus::server::axum::Extension(service)))
+            .layer(dioxus::server::axum::Extension(service));
+        Ok(api::instance::tag_responses(
+            router,
+            api::instance::instance_name_from_env().as_deref(),
+        ))
     });
 }
 

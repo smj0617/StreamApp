@@ -1,0 +1,17 @@
+# Docker 빌드 문맥에서 뺄 것(Dockerfile). 빌드에 필요한 것은 Cargo.toml·Cargo.lock·rust-toolchain.toml·packages/뿐이다.
+# 데스크톱 패키지(packages/desktop)는 워크스페이스 멤버라 소스는 남기고 번들 산출물만 뺀다.
+.git
+.github
+target
+data
+.tools
+packages/desktop/dist
+deploy
+docs
+k8s
+loadtest
+scripts
+tools
+**/*.db
+**/*.db-wal
+**/*.db-shm

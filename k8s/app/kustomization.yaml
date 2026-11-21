@@ -1,0 +1,24 @@
+# StreamApp 로컬 오토스케일(과제 ⑤) 매니페스트 묶음. scripts\k8s-up.ps1이 적용한다:
+#   kubectl apply -k k8s/app
+#
+# 적용 전에 k8s/app/secret.env가 있어야 한다(git 제외). 없으면 k8s-up.ps1이 secret.env.example을 복사해 만든다.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: streamapp
+resources:
+  - namespace.yaml
+  - storage.yaml
+  - redis.yaml
+  - mediamtx.yaml
+  - streamapp.yaml
+  - hpa.yaml
+configMapGenerator:
+  # MediaMTX 설정 파일. 내용이 바뀌면 이름 뒤 해시가 바뀌어 MediaMTX 파드가 새로 뜬다.
+  - name: mediamtx-config
+    files:
+      - mediamtx.yml
+secretGenerator:
+  # 앱 비밀 값(기본 사용자 비밀번호, 토스페이먼츠 테스트 키). 값이 바뀌면 앱 파드가 새로 뜬다.
+  - name: streamapp-secrets
+    envs:
+      - secret.env

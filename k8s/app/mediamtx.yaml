@@ -1,0 +1,78 @@
+# MediaMTX(라이브 영상 서버) 1개. 영상 송출·HLS는 MediaMTX 한 대가 맡고(ADR 0002), 오토스케일하는 것은 앱이다.
+# MediaMTX는 송출 중인 영상을 메모리에 들고 있어 여러 대로 늘리려면 경로마다 같은 인스턴스로 보내는 별도 설계가
+# 필요하다(README ⑤ 절 "하지 않은 것").
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mediamtx
+  labels:
+    app: mediamtx
+spec:
+  replicas: 1
+  # 포트를 잡고 있는 이전 파드가 끝난 뒤에 새 파드를 띄운다.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mediamtx
+  template:
+    metadata:
+      labels:
+        app: mediamtx
+    spec:
+      containers:
+        - name: mediamtx
+          image: bluenviron/mediamtx:1.21.3-ffmpeg
+          ports:
+            - { name: rtmp, containerPort: 1935, protocol: TCP }
+            - { name: hls, containerPort: 8888, protocol: TCP }
+            - { name: webrtc, containerPort: 8889, protocol: TCP }
+            - { name: ice-udp, containerPort: 8189, protocol: UDP }
+            - { name: ice-tcp, containerPort: 8189, protocol: TCP }
+            - { name: api, containerPort: 9997, protocol: TCP }
+          volumeMounts:
+            - name: config
+              mountPath: /mediamtx.yml
+              subPath: mediamtx.yml
+          readinessProbe:
+            tcpSocket:
+              port: api
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: mediamtx-config
+---
+# 클러스터 안에서 앱만 부르는 주소: Control API(9997), WebRTC HTTP(8889).
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediamtx
+spec:
+  selector:
+    app: mediamtx
+  ports:
+    - { name: api, port: 9997, targetPort: api }
+    - { name: webrtc, port: 8889, targetPort: webrtc }
+---
+# 클러스터 밖(이 PC)에서 닿는 주소. NodePort를 kind가 호스트 포트로 잇는다(k8s/kind-cluster.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediamtx-public
+spec:
+  type: NodePort
+  selector:
+    app: mediamtx
+  ports:
+    - { name: rtmp, port: 1935, targetPort: rtmp, nodePort: 31935, protocol: TCP }
+    - { name: hls, port: 8888, targetPort: hls, nodePort: 30888, protocol: TCP }
+    - { name: ice-udp, port: 8189, targetPort: ice-udp, nodePort: 30189, protocol: UDP }
+    - { name: ice-tcp, port: 8189, targetPort: ice-tcp, nodePort: 30189, protocol: TCP }

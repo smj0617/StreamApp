@@ -14,7 +14,7 @@ use axum::{
     response::IntoResponse,
     Router,
 };
-use common::{cookie, service, user};
+use common::{cookie, service, two_instances, user};
 use tower::ServiceExt; // oneshot
 
 const OFFER: &str = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\n";
@@ -316,4 +316,49 @@ async fn offer_for_channel_already_live_is_rejected_before_reaching_mediamtx() {
     assert_eq!(res.status(), StatusCode::CONFLICT);
     assert!(message(res).await.contains("이미 방송 중"));
     assert!(seen.lock().unwrap().is_empty());
+}
+
+/// 앱 인스턴스가 여럿이면(과제 ⑤) 송출 종료 요청이 시작 요청과 다른 인스턴스로 갈 수 있다. 송출 세션 표가
+/// 공용 DB에 있으므로 어느 인스턴스로 가도 주인 확인(403)·모르는 세션(404)·종료(200)가 같게 동작한다.
+#[tokio::test]
+async fn stop_reaching_another_instance_sees_the_session_started_on_the_first() {
+    let (first, second, _dir) = two_instances().await;
+    let (owner, channel_id, stream_key) = chulsoo(&first).await;
+    let (other, _, _) = streamer(&first, "영희").await;
+    let (mediamtx, seen) = fake_mediamtx(Reply::Accept).await;
+    let instance_a = whip::router(first, &mediamtx);
+    let instance_b = whip::router(second, &mediamtx);
+
+    let started = send(&instance_a, offer_request(Some(owner.as_str()), OFFER)).await;
+    assert_eq!(started.status(), StatusCode::CREATED);
+
+    let forbidden = send(
+        &instance_b,
+        stop_request(Some(other.as_str()), SESSION_PATH),
+    )
+    .await;
+    assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+
+    let stopped = send(
+        &instance_b,
+        stop_request(Some(owner.as_str()), SESSION_PATH),
+    )
+    .await;
+    assert_eq!(stopped.status(), StatusCode::OK);
+    assert_eq!(
+        seen.lock().unwrap()[1..],
+        [(
+            Method::DELETE,
+            format!("/{channel_id}/whip/2f6e1c3a-0000-4b9e-9c1d-1234567890ab?key={stream_key}"),
+            String::new()
+        )]
+    );
+
+    // 끝낸 세션은 시작한 인스턴스에서도 모르는 송출이다.
+    let again = send(
+        &instance_a,
+        stop_request(Some(owner.as_str()), SESSION_PATH),
+    )
+    .await;
+    assert_eq!(again.status(), StatusCode::NOT_FOUND);
 }

@@ -61,7 +61,9 @@ impl AppService {
     /// `password`다. 라이브는 만들지 않는다. 만들었으면 `true`를 돌려준다.
     pub async fn seed_default_users(&self, password: &str) -> Result<bool, ServiceError> {
         let hash = hash_password(valid_password(password)?.to_owned()).await?;
-        let mut tx = self.pool.begin().await?;
+        // 여러 앱 인스턴스가 빈 DB에서 동시에 시작해도(과제 ⑤) 한 곳만 만들도록, 세기 전에 쓰기 잠금을
+        // 잡는다(`BEGIN IMMEDIATE`). 다른 인스턴스는 잠금을 기다렸다가(busy_timeout) 사용자가 있음을 본다.
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
             .fetch_one(&mut *tx)
             .await?;

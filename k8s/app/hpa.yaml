@@ -1,0 +1,37 @@
+# 지표 기준 자동 조절: 앱 파드의 평균 CPU 사용률(requests 100m 대비)을 50%로 맞추도록 2~5개 사이에서 늘리고 줄인다.
+# CPU 사용량은 metrics-server(k8s/metrics-server)가 15초마다 모은다.
+#
+# 확인하기 쉽게 behavior를 짧게 잡았다(실서비스라면 줄이는 쪽 안정화 시간을 기본 300초 그대로 두는 편이 낫다):
+#   - 늘리기: 기다리지 않고, 15초마다 최대 2개씩
+#   - 줄이기: 60초 동안 계속 낮으면, 15초마다 최대 1개씩
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: streamapp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: streamapp
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 15

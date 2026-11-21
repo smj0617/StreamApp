@@ -14,6 +14,7 @@
 //!   - [`health`]: 상태 확인 경로 `GET /healthz`(Dioxus 없는 axum 라우터). 배포 확인과 모니터링용. 보조 테스트 경계다.
 //!   - [`mediamtx`]: MediaMTX가 부르는 내부 HTTP 엔드포인트(Dioxus 없는 axum 라우터). 보조 테스트 경계다.
 //!   - [`recording_files`]: 녹화방송 영상 파일 올리기와 내주기(Dioxus 없는 axum 라우터). 보조 테스트 경계다.
+//!   - [`instance`]: 응답에 답한 앱 인스턴스(파드) 이름을 붙인다(과제 ⑤, 요청 분산 확인용).
 //!   - [`whip`]: 휴대폰 방송 송출 시작·종료를 MediaMTX로 넘기는 중계(Dioxus 없는 axum 라우터). 보조 테스트 경계다.
 //!   - [`payment_webhook`]: 결제 서비스(토스페이먼츠)의 결제 상태 변경 통지를 받는 웹훅(Dioxus 없는 axum 라우터).
 //!     보조 테스트 경계다.
@@ -42,6 +43,8 @@ pub use watch::*;
 
 #[cfg(feature = "server")]
 pub mod health;
+#[cfg(feature = "server")]
+pub mod instance;
 #[cfg(feature = "server")]
 pub mod mediamtx;
 #[cfg(feature = "server")]
